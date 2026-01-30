@@ -2,7 +2,7 @@
 #
 # Proyecto:       Simulacion_Gillingham
 #
-# Script:         scripts/main.R
+# Script:         scripts/main.py
 # Objetivo:
 #
 # Autor:          Rodrigo Antonio Aldrette Salas
@@ -16,22 +16,15 @@
 # _____________________________________________________________________________
 
 # PREAMBULO ___________________________________________________________________
+import pandas as pd
+import numpy as np
 
-# Limpiar entorno de trabajo
-rm(list = ls())       # Limpiar entorno de trabajo
-source("~/.Rprofile") # Cargar configuraciones globales
-cat("\014")           # Limpiar consola
-
-
-# Carga de paquetes
-pacman::p_load(tidyverse, readxl, writexl, janitor, lubridate, jsonlite)
-  
 # CODIGO ______________________________________________________________________
 
 # FUNCIONES -------------------------------------------------------------------
-source("./scripts/funciones.R")
 
 # DATA ------------------------------------------------------------------------
 
 # SCRIPT ----------------------------------------------------------------------
+
 

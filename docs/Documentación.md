@@ -15,8 +15,7 @@ Para ver el esquema general, vea el [README](../README.md) del proyecto.
 
 
 ## Notas y consideraciones
-
-[NOTA INTERNA: Favor de escribir aquí la documentación en RAW y lo que valga la pena de leer para el resto del equipo, pero que no tenga una estructura clara. Si el comentario o nota no es lo suficientemente relevante, favor de escribirlo en [Notas internas del Proyecto](./Notas.md).]
+Discusiones del proyecto fuera del funcionamiento de este repositorio se encuentra en [Notas internas del Proyecto](./Notas.md).
 
 ## Referencias
 
