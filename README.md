@@ -1,6 +1,6 @@
 ﻿# Simulacion_Gillingham
 
-Bienvenidos a este readme, espero les agrade lo que intenta hacer este proyecto
+Bienvenidos a este readme. El proyecto está hecho en el IDE Positron, un fork de VSCode, con el fin de hacer fluido el trabajo con archivos de R y Python. El archivo de proyecto de R es redundante si se abre con cualquier IDE como VSCode, pero se deja por si alguien quiere correrlo dentro de R.
 
 ## Objetivo del proyecto
 

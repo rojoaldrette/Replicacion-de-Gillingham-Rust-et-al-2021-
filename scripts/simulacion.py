@@ -71,17 +71,17 @@ def get_idx(j, a):
 # Creamos una matriz, u_vector, con la utilidad de cada estado (tipo, estado).
 # Calculamos la utilidad base de existir en cada estado (tenencia)
 
-u_vector = np.zeros((n_types, n_states))
+u_matrix = np.zeros((n_types, n_states))
 
 for tau in range(n_types):
     # Utilidad de no tener coche
-    u_vector[tau, 0] = 0 
+    u_matrix[tau, 0] = 0 
     
     for j in range(J):
         for a in range(1, A_max + 1):
             idx = get_idx(j, a)
             # Calculamos la utilidad a partir de lo que da de calidad menos la depreciación
-            u_vector[tau, idx] = calidad_x[j] - delta * a
+            u_matrix[tau, idx] = calidad_x[j] - delta * a
 
 
 
@@ -122,18 +122,15 @@ for j in range(J):
     idx_max = get_idx(j, A_max)
     Q_a[idx_max, 0] = 1
 
-
+# Verificar si suman a 1 las filas (por construcción no debería haber problema),
+# me sirvió de debugging
+if not np.allclose(Q_a.sum(axis=1), 1):
+    print("Error: Hay filas en Q_a que no suman 1. Revisa los índices.")
 
 # Paso 3: Bellman ----------------------------------------------------------------------
 
-def sol_bellman(precios_usados):
-    """
-    Esta función encuentra el punto fijo EV para la bellman con los parámetros que creamos.
-    Toma un vector de precios de coches usados (excluidos los exógenos: nuevos y scrap), lo
-    acomoda en un vector de precios y después crea la matriz EV (tipos x estados) a partir
-    de la utilidad máxima que puede conseguir
-    """
-
+# Función para crear vector de precios para cada estado
+def get_P(precios_usados):
     # Creamos vector de precios
     P = np.zeros(n_states)
     # Precio de no coche es cero
@@ -150,16 +147,33 @@ def sol_bellman(precios_usados):
             else:
                 P[idx] = precios_usados[k]
                 k += 1
+    return P
+
+
+def sol_bellman(precios_usados):
+    """
+    Esta función encuentra el punto fijo EV para la bellman con los parámetros que creamos.
+    Toma un vector de precios de coches usados (excluidos los exógenos: nuevos y scrap), lo
+    acomoda en un vector de precios y después crea la matriz EV (tipos x estados) a partir
+    de la utilidad máxima que puede conseguir.
+
+    Hay un segundo objetivo en esta función: crear la matriz u_trade, la cual nos da la utilidad
+    inmediata de cada decisión según el vector P. Esta nos facilitará la creación de las probabilidades.
+    Puede que no sea lo más eficiente (tener que crearlo cada vez que se corre esta función). Pero
+    nos permite matar dos pajaros de un tiro en términos de redundancia del código.
+    """
+
+    P = get_P(precios_usados)
 
     # Hacemos la matriz de funciones de valor
     # Inicializamos en ceros
     EV = np.zeros((n_types, n_states))
     EV_new = np.zeros_like(EV)
 
-    # Iteramos para encontrar punto fijo (decidí no hacer un Newton por el tiempo)
+    # Iteramos para encontrar punto fijo (decidí no hacer un algorítmo Newton por el tiempo)
     # Aquí los consumidores de distintos estados se encontrarán con sus posibles elecciones
     for _ in range(500):
-        # Valor inicial de E[V]=Q*EV
+        # Valor inicial de E[V]=EV*Q_a.T
         EV_next = np.dot(EV, Q_a.T)
 
         for tau in range(n_types):
@@ -174,11 +188,11 @@ def sol_bellman(precios_usados):
                 # MANTENER --------------------------------
                 ## Sin coche
                 if s0 == 0:
-                    v_keep = u_vector[tau, 0] + beta * EV_next[tau, 0]
+                    v_keep = u_matrix[tau, 0] + beta * EV_next[tau, 0]
                     v_alternativas.append(v_keep)
                 ## Con coche
                 else:
-                    v_keep = u_vector[tau, s0] + beta * EV_next[tau, s0]
+                    v_keep = u_matrix[tau, s0] + beta * EV_next[tau, s0]
                     v_alternativas.append(v_keep)
 
                     # Ponemos el valor de venta
@@ -198,7 +212,7 @@ def sol_bellman(precios_usados):
                         # Continuamos a la siguiente iteración
                         continue
                     # Obtenemos utilidad de adquirir cada coche
-                    u_trade = u_vector[tau, s1] - costo_compra + val_venta + beta * EV_next[tau, s1]
+                    u_trade = u_matrix[tau, s1] - costo_compra + val_venta + beta * EV_next[tau, s1]
                     v_alternativas.append(u_trade)
 
                 # Calculamos su EV a partir del valor máximo que puede conseguir
@@ -222,8 +236,24 @@ def sol_bellman(precios_usados):
 
 # Paso 4: Demanda y oferta ---------------------------------------------------------------
 
+# ------- Probabilidades ----------------------
+
+def calc_probs(EV, p_guess):
+    """
+    Para calcular las probabilidades vamos a basarnos en la fórmula:
+    Pi[s1|s0] = exp((v_{s1}(s0) - EV(s)) / sigma)
+    que es idéntica a la del paper, pero no explota en python.
+    Hay que llenar la matriz omega[s0, s1] = Pi[s1 | s0].
+    Aquí v_{s1}(s0) es el valor de u_matrix[,s0] + trade_costs
+    """
+    return 0
 
 
+def ED(P, omega):
+    return 0
 
 
 # Paso 3: Simulación ---------------------------------------------------------------
+
+
+
