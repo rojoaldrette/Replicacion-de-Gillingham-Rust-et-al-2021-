@@ -85,23 +85,38 @@ for tau in range(n_types):
 
 
 
-# -- Matriz de envejecimiento
+# --- Matriz de envejecimiento y deshuesadero -----------
 # Creamos Q_a como la matriz de transicion de una edad a otra
 # P.D. QUE INCREIBLE MANEJAR MATRICES DE TRANSICIÓN EN PROGRAMACIÓN
 # ES TAN INTUITIVO: Q_a[desde, hacia] = probabilidad
 
+# Probabilidad de quedar en edad terminal según su modelo y edad
+def alpha(j, a):
+    if a == (A_max - 1):
+        prob = 1
+    else:
+        # Función creciente en a y decreciente en j (calidad)
+        prob = (a/(4 * A_max)) + ((3-j) / 20)
+    return prob
+
+
 Q_a = np.zeros((n_states, n_states))
 # Los del estado cero tienen p=1 de seguir sin coche
 Q_a[0, 0] = 1
+# Lista de edades máximas de coches
+max_ages = [get_idx(j, A_max) for j in range(J)]
 
 for j in range(J):
     for a in range(1, A_max + 1):
-        try:
-            idx_0 = get_idx(j, a)
+        # Índice inicial
+        idx_0 = get_idx(j, a)
+        if idx_0 not in max_ages:
+            # Índice destino
             idx_1 = get_idx(j, a + 1)
-            Q_a[idx_0, idx_1] = 1
-        except:
-            print("Pene")
+            # Prob de sobrevivir y pasar a la siguiente edad
+            Q_a[idx_0, idx_1] = 1 - alpha(j, a)
+            # Prob de falla
+            Q_a[idx_0, max_ages[j]] = alpha(j, a)
     
     # Garantizamos que si estas en edad máxima -> desguezadero
     idx_max = get_idx(j, A_max)
@@ -111,10 +126,13 @@ for j in range(J):
 
 # Paso 3: Bellman ----------------------------------------------------------------------
 
-max_ages = [get_idx(j, A_max) for j in range(J)]
-
-
 def sol_bellman(precios_usados):
+    """
+    Esta función encuentra el punto fijo EV para la bellman con los parámetros que creamos.
+    Toma un vector de precios de coches usados (excluidos los exógenos: nuevos y scrap), lo
+    acomoda en un vector de precios y después crea la matriz EV (tipos x estados) a partir
+    de la utilidad máxima que puede conseguir
+    """
 
     # Creamos vector de precios
     P = np.zeros(n_states)
@@ -169,22 +187,26 @@ def sol_bellman(precios_usados):
                 # COMPRAR COCHE -------------------------
                 # Iteramos sobre todos los coches (incluido el no coche)
                 for s1 in range(n_states):
-                    costo_compra = 0
-                    # Si es un estado con coche
-                    if s1 != 0:
-                        costo_compra = (P[s1] + t_b) * mu
+                    # Si es un estado sin coche
+                    costo_compra = (P[s1] + t_b) * mu
+                    if s1 == 0:
+                        costo_compra = 0
                     # Si el coche está en edad terminal
                     elif s1 in max_ages:
-                        costo_compra = (P[s1]) * mu
+                        # Si el coche tiene edad máxima, entonces no se puede comprar
+                        # Se puede comprar máximo en edad A_max - 1
+                        # Continuamos a la siguiente iteración
+                        continue
                     # Obtenemos utilidad de adquirir cada coche
                     u_trade = u_vector[tau, s1] - costo_compra + val_venta + beta * EV_next[tau, s1]
                     v_alternativas.append(u_trade)
 
-            # escoger valor máximo
-            vals = np.array(v_alternativas)
-            max_val = np.max(vals)
-            ev_val = max_val + sigma * np.log(np.sum(np.exp((vals - max_val)/ sigma)))
-            EV_new[tau, s0] = ev_val
+                # Calculamos su EV a partir del valor máximo que puede conseguir
+                vals = np.array(v_alternativas)
+                max_val = np.max(vals)
+                # Hacemos esta transformación para no explotar exp(vals) -> inf (Gracias ChatGPT)
+                ev_val = max_val + sigma * np.log(np.sum(np.exp((vals - max_val)/ sigma)))
+                EV_new[tau, s0] = ev_val
 
         # Si es menor al threshold, entonces decimos que es el punto fijo
         if np.max(np.abs(EV_new - EV)) < 1e-16:
@@ -198,10 +220,10 @@ def sol_bellman(precios_usados):
 
 
 
-# Paso 4: Encontrar precios P ---------------------------------------------------------------
+# Paso 4: Demanda y oferta ---------------------------------------------------------------
 
-# Tolerancia
-threshold = 1e-8
+
+
 
 
 # Paso 3: Simulación ---------------------------------------------------------------
