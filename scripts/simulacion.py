@@ -378,6 +378,12 @@ def get_big_q(q_list):
 # Paso 6: Oferta y demanda ---------------------------------------------------------
 
 def ED(p_guess):
+    """
+    Esta va a ser la función que nos dé el exceso de demanda a partir de un vector de precios.
+    La función va a tomar de todas las funciones anteriores, esto hace esta función uno de los puntos finales.
+    De aquí sigue hacer alguna función o un for-loop que nos permita encontrar el vector de precios que vacia
+    el mercado según las preferencias y los parámetros que asignamos anteriormente.
+    """
 
     EV = sol_bellman(p_guess)
     omega_list = []
@@ -394,12 +400,19 @@ def ED(p_guess):
     q_tot = get_big_q(q_list)
 
     # ------ Demanda ---------------
-
+    Dem = np.zeros(n_states)
     
 
 
+    # ------ Oferta ----------------
+    Ofr = np.zeros(n_states)
 
-    return 0
+
+    # ------ ED -------------------
+
+    ED = Dem - Ofr
+
+    return ED
 
 
 
