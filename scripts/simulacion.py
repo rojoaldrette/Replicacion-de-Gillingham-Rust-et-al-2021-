@@ -33,6 +33,8 @@ A_max = 15
 J = 3
 # Tipos de agentes (rico y pobre), 1 = pobre, 2 = rico
 n_types = 2
+# Proporción agentes
+type_mass = [0.5, 0.5]
 # Sus mu's (efectos riqueza)
 mus = np.array([20, 10])
 # Correlación entre elecciones
@@ -65,7 +67,22 @@ n_states = 1 + J * A_max
 def get_idx(j, a):
     if j is None: return 0 # Estado "sin coche"
     return 1 + j * A_max + (a - 1)
+# Inversos a get_idx
+def get_brand(state):
+    brand = ((state - (state % 15)) / 15)
+    return brand
+def get_age(state):
+    age = int(state % 15)
+    return age
 
+# Creamos un vector de scrap values para cada situación
+scrap_vec = np.zeros(n_states)
+for s in range(n_states):
+    if s == 0:
+        scrap_vec[s] = 0
+    else:
+        marca = get_brand(s) # Debería devolver 0, 1 o 2
+        scrap_vec[s] = scrap_values[marca]
 
 # --- Utilidad de cada estado -----
 # Creamos una matriz, u_vector, con la utilidad de cada estado (tipo, estado).
@@ -170,6 +187,9 @@ def sol_bellman(precios_usados):
     EV = np.zeros((n_types, n_states))
     EV_new = np.zeros_like(EV)
 
+    # Inicializamos la matriz de funciones de valor
+    v_matrix = np.zeros((n_states, n_states))
+
     # Iteramos para encontrar punto fijo (decidí no hacer un algorítmo Newton por el tiempo)
     # Aquí los consumidores de distintos estados se encontrarán con sus posibles elecciones
     for _ in range(500):
@@ -182,23 +202,44 @@ def sol_bellman(precios_usados):
             for s0 in range(n_states):
                 # Lista de opciones
                 v_alternativas = []
-                # Valor de venta del coche
-                val_venta = 0
+                # Marca del coche
+                brand = get_brand(s0)
 
-                # MANTENER --------------------------------
+                # -- Valor de venta/scrap ------------------
+                if s0 == 0:
+                    v_disposal = 0
+                else:
+                    u_vender = mu * (P[s0] - t_s)
+                    u_scrap  = mu * scrap_values[brand]
+            
+                    # Si el coche es terminal, no se puede vender a particular
+                    if s0 in max_ages:
+                        u_vender = -np.inf 
+            
+                    # Aplicamos Log-Sum-Exp para el valor de salida (v_disposal)
+                    # Esto representa el valor esperado de elegir entre vender o chatarrizar
+                    # i.e. sacar la probabilidad de escoger alguno de los dos
+                    # Esto lo sacamos aquí para obtener las funciones de valor, pero
+                    # en la siguiente función obtenemos su probabilidad para la demanda y oferta
+                    m_salida = max(u_vender, u_scrap)
+                    v_disposal = m_salida + sigma * np.log(np.exp((u_vender - m_salida)/sigma) + 
+                                                   np.exp((u_scrap - m_salida)/sigma))
+
+                ### DECISIONES ---------------------------------------------------------------
+                #-------- MANTENER --------------------------------
                 ## Sin coche
                 if s0 == 0:
                     v_keep = u_matrix[tau, 0] + beta * EV_next[tau, 0]
                     v_alternativas.append(v_keep)
                 ## Con coche
+                elif s0 in max_ages:
+                    v_keep = -np.inf
+                    v_alternativas.append(v_keep)
                 else:
                     v_keep = u_matrix[tau, s0] + beta * EV_next[tau, s0]
                     v_alternativas.append(v_keep)
-
-                    # Ponemos el valor de venta
-                    val_venta = (P[s0] - t_s) * mu
                 
-                # COMPRAR COCHE -------------------------
+                # COMPRAR COCHE / TRADE -------------------------
                 # Iteramos sobre todos los coches (incluido el no coche)
                 for s1 in range(n_states):
                     # Si es un estado sin coche
@@ -212,7 +253,7 @@ def sol_bellman(precios_usados):
                         # Continuamos a la siguiente iteración
                         continue
                     # Obtenemos utilidad de adquirir cada coche
-                    u_trade = u_matrix[tau, s1] - costo_compra + val_venta + beta * EV_next[tau, s1]
+                    u_trade = u_matrix[tau, s1] - costo_compra + v_disposal + beta * EV_next[tau, s1]
                     v_alternativas.append(u_trade)
 
                 # Calculamos su EV a partir del valor máximo que puede conseguir
@@ -228,29 +269,139 @@ def sol_bellman(precios_usados):
         # Copy porque namas así controlas los pointers del python xd (En R no es necesario, 
         # pero siento que arriesgas más memory overflow con estos procesos)
         EV = EV_new.copy()
-    
+
     # Regresamos el punto fijo
     return EV
 
 
 
-# Paso 4: Demanda y oferta ---------------------------------------------------------------
+# Paso 4: Probabilidades  ---------------------------------------------------------------
 
-# ------- Probabilidades ----------------------
 
-def calc_probs(EV, p_guess):
+def calc_probs(EV, precios_guess, tau):
     """
-    Para calcular las probabilidades vamos a basarnos en la fórmula:
-    Pi[s1|s0] = exp((v_{s1}(s0) - EV(s)) / sigma)
-    que es idéntica a la del paper, pero no explota en python.
-    Hay que llenar la matriz omega[s0, s1] = Pi[s1 | s0].
-    Aquí v_{s1}(s0) es el valor de u_matrix[,s0] + trade_costs
+    Esta función nos debe dar las probabilidades necesarias para calcular omega en su totalidad y
+    las probabilidades de chatarrización endógena para calcular el exceso de demanda
     """
+    P = get_P(precios_guess)
+    mu = mus[tau]
+    EV_next = np.dot(EV, Q_a.T)
+
+    # ------ Prob scrap y sell --------------------------------------
+    # Obtener probabilidades de scrap y sell para incluirlo en las probabilidades de omega
+    u_vender = mu * (P - t_s)
+    u_scrap = mu * scrap_vec
+    for age in max_ages:
+        u_vender[age] = -np.inf
+    
+    m_salida = np.maximum(u_vender, u_scrap)
+    v_disposal = m_salida + sigma * np.log(np.exp((u_vender - m_salida)/sigma) + 
+                                           np.exp((u_scrap - m_salida)/sigma))
+    # Probabilidad condicional de elegir SCRAP dado que se hace TRADE
+    # prob_scrap_cond[s0]
+    p_scrap_cond = np.exp((u_scrap - v_disposal)/sigma)
+    
+    # --- Funciones de valor --------------------------
+
+    ## MANTENER ----------------------------
+    v_keep = u_matrix[tau, :] + beta * EV_next[tau, :]
+    # Hacer mantener imposible si está en edad terminal
+    for age_max_idx in max_ages:
+        v_keep[age_max_idx] = -np.inf
+    
+    ## TRADE ---------------------------------
+    # Matriz de transacciones: v_trade[s0, s1]
+    # Usamos broadcasting de numpy para evitar los loops de s0 y s1
+    # Utilidad de tener s1 - costo compra s1 + valor venta s0 + valor futuro s1
+    v_trade = (u_matrix[tau, :][None, :] 
+               - mu * (P + t_b)[None, :] 
+               + v_disposal[:, None] # El valor esperado de su salida
+               + beta * EV_next[tau, :][None, :])
+    
+    # No se pueden comprar coches en edad terminal
+    for age_max_idx in max_ages:
+        v_trade[:, age_max_idx] = -np.inf
+
+    # Quitamos el costo de búsqueda para ir al s=0
+    v_trade[:, 0] = u_matrix[tau, 0] + v_disposal + beta * EV_next[tau, 0]
+
+    # ---------- MATRIZ DE TRANSICIÓN OMEGA -------------------------------------------
+    
+    # Para calcular omega[s0, s1], necesitamos la probabilidad de CADA opción.
+    # Pero omega solo registra el estado final s1. 
+    # Si s1 == s0, hay dos formas de estar ahí: haber mantenido (keep) 
+    # o haber vendido y comprado el mismo modelo (trade).
+    
+    # Usamos el EV[tau, s0] que ya calculamos en sol_bellman como denominador
+    # Esto garantiza estabilidad numérica total.
+    
+    prob_keep = np.exp((v_keep - EV[tau, :]) / sigma)
+    prob_trade_matrix = np.exp((v_trade - EV[tau, :][:, None]) / sigma)
+    
+    # La matriz Omega final:
+    omega_tau = prob_trade_matrix.copy()
+    # Sumamos la probabilidad de mantener en la diagonal (o donde s1 == s0)
+    np.fill_diagonal(omega_tau, np.diag(omega_tau) + prob_keep)
+
+    # Retornamos omega para calcular q y p_scrap_cond para calcular el exceso de demanda
+    return omega_tau, p_scrap_cond
+
+
+
+# Paso 5: Población  ---------------------------------------------------------------
+
+
+def get_q_tau(omega):
+
+    # Matriz de transición completa
+    T = omega @ Q_a
+
+    n = T.shape[0]
+    q = np.ones(n) / n
+    for _ in range(5000):
+        q_new = q @ T
+        if np.max(np.abs(q_new - q)) < 1e-13:
+            return q_new
+        q = q_new
+    print("No convergió")
+    return q
+
+def get_big_q(q_list):
+    # Calculamos la q final a partir de las q's que le damos en lista
+    big_q = np.zeros(n_states)
+    for i, q in enumerate(q_list):
+        adj_q = type_mass[i] * q
+        big_q = big_q + adj_q
+    return big_q
+
+
+# Paso 6: Oferta y demanda ---------------------------------------------------------
+
+def ED(p_guess):
+
+    EV = sol_bellman(p_guess)
+    omega_list = []
+    p_scrap_list = []
+    q_list = []
+
+    for tau in range(n_types):
+        omega, p_scrap = calc_probs(EV, p_guess, tau)
+        q_tau = get_q_tau(omega)
+        omega_list.append(omega)
+        p_scrap_list.append(p_scrap)
+        q_list.append(q_tau)
+    
+    q_tot = get_big_q(q_list)
+
+    # ------ Demanda ---------------
+
+    
+
+
+
     return 0
 
 
-def ED(P, omega):
-    return 0
 
 
 # Paso 3: Simulación ---------------------------------------------------------------
