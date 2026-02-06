@@ -15,6 +15,13 @@
 #
 # _____________________________________________________________________________
 
+# Notas para arreglar:
+# Estoy definiendo mal la demanda y eso hace que no cambie
+# La demanda es solo sobre bienes transeables j\in {1, ..., J} y a\in{1, ..., 14} (existe edad 0)
+# Mi pedo también es que puse a iniciando en 1 y eso me confundió xd
+# Namas hay que arreglar demanda para q si varíe con P y espero eso funcione xd
+# Checar Chatgpt
+
 # PREAMBULO ___________________________________________________________________
 
 import pandas as pd
