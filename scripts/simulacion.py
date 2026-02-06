@@ -400,17 +400,30 @@ def ED(p_guess):
     q_tot = get_big_q(q_list)
 
     # ------ Demanda ---------------
-    Dem = np.zeros(n_states)
+    Dem_list = np.array(n_types)
+    for tau in range(n_types):
+        demand = np.zeros(n_states)
+        q_t = q_list[tau]
+        omega_t = omega_list[tau]
+        demand = q_t @ omega_t
+        Dem_list[tau] = demand
     
 
 
     # ------ Oferta ----------------
-    Ofr = np.zeros(n_states)
-
+    Supply_list = np.array(n_types)
+    
+    for tau in range(n_types):
+        supply = np.zeros(n_states)
+        q_t = q_list[tau]
+        omega_t = omega_list[tau]
+        p_scrap_t = p_scrap_list[tau]
 
     # ------ ED -------------------
-
-    ED = Dem - Ofr
+    ED_list = Dem_list - Supply_list
+    ED = 0
+    for i, ED_item in ED_list:
+        ED += type_mass[i] * ED_item
 
     return ED
 
