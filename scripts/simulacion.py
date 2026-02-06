@@ -36,7 +36,7 @@ n_types = 2
 # Proporción agentes
 type_mass = [0.5, 0.5]
 # Sus mu's (efectos riqueza)
-mus = np.array([20, 10])
+mus = np.array([0.3, 0.1])
 # Correlación entre elecciones
 sigma = 1
 
@@ -69,11 +69,13 @@ def get_idx(j, a):
     return 1 + j * A_max + (a - 1)
 # Inversos a get_idx
 def get_brand(state):
-    brand = ((state - (state % 15)) / 15)
-    return brand
+    if state == 0:
+        return None
+    return (state - 1) // 15
 def get_age(state):
-    age = int(state % 15)
-    return age
+    if state == 0:
+        return 0
+    return ((state - 1) % 15) + 1
 
 # Creamos un vector de scrap values para cada situación
 scrap_vec = np.zeros(n_states)
@@ -81,8 +83,8 @@ for s in range(n_states):
     if s == 0:
         scrap_vec[s] = 0
     else:
-        marca = get_brand(s) # Debería devolver 0, 1 o 2
-        scrap_vec[s] = scrap_values[marca]
+        marca = get_brand(s) # Debería devolver 0, 1 o 2 (a veces float xd)
+        scrap_vec[s] = scrap_values[int(marca)]
 
 # --- Utilidad de cada estado -----
 # Creamos una matriz, u_vector, con la utilidad de cada estado (tipo, estado).
@@ -113,7 +115,7 @@ def alpha(j, a):
         prob = 1
     else:
         # Función creciente en a y decreciente en j (calidad)
-        prob = (a/(4 * A_max)) + ((3-j) / 20)
+        prob = (a/(5 * A_max)) + ((3-j) / 20)
     return prob
 
 
@@ -122,6 +124,8 @@ Q_a = np.zeros((n_states, n_states))
 Q_a[0, 0] = 1
 # Lista de edades máximas de coches
 max_ages = [get_idx(j, A_max) for j in range(J)]
+# Lista de edades nuevas de coches
+new_ages = [get_idx(j, 0) for j in range(J)]
 
 for j in range(J):
     for a in range(1, A_max + 1):
@@ -203,12 +207,12 @@ def sol_bellman(precios_usados):
                 # Lista de opciones
                 v_alternativas = []
                 # Marca del coche
-                brand = get_brand(s0)
 
                 # -- Valor de venta/scrap ------------------
                 if s0 == 0:
                     v_disposal = 0
                 else:
+                    brand = get_brand(s0)
                     u_vender = mu * (P[s0] - t_s)
                     u_scrap  = mu * scrap_values[brand]
             
@@ -344,7 +348,7 @@ def calc_probs(EV, precios_guess, tau):
     np.fill_diagonal(omega_tau, np.diag(omega_tau) + prob_keep)
 
     # Retornamos omega para calcular q y p_scrap_cond para calcular el exceso de demanda
-    return omega_tau, p_scrap_cond
+    return omega_tau, p_scrap_cond, prob_keep
 
 
 
@@ -377,56 +381,120 @@ def get_big_q(q_list):
 
 # Paso 6: Oferta y demanda ---------------------------------------------------------
 
+
+def get_indices_usados():
+    """
+    Identifica los índices de los estados que corresponden a coches usados.
+    Estos son los mercados cuyos precios el optimizador debe ajustar.
+    """
+    indices_usados = []
+    
+    for s in range(n_states):
+        # 1. Ignoramos el estado s=0 (no hay bien que vender)
+        if s == 0:
+            continue
+            
+        # 2. Obtenemos la edad del coche en este estado
+        age = get_age(s)
+        
+        # 3. Filtramos:
+        # - Debe ser mayor a 0 (no es nuevo)
+        # - No debe estar en la lista de edades terminales (no se vende a particulares)
+        if age > 1 and s not in max_ages:
+            indices_usados.append(s)
+            
+    return np.array(indices_usados)
+
 def ED(p_guess):
-    """
-    Esta va a ser la función que nos dé el exceso de demanda a partir de un vector de precios.
-    La función va a tomar de todas las funciones anteriores, esto hace esta función uno de los puntos finales.
-    De aquí sigue hacer alguna función o un for-loop que nos permita encontrar el vector de precios que vacia
-    el mercado según las preferencias y los parámetros que asignamos anteriormente.
-    """
-
+    # 1. Resolver el problema del consumidor
     EV = sol_bellman(p_guess)
-    omega_list = []
-    p_scrap_list = []
-    q_list = []
+    
+    # Inicializamos agregadores de mercado
+    total_demand = np.zeros(n_states)
+    total_supply = np.zeros(n_states)
 
     for tau in range(n_types):
-        omega, p_scrap = calc_probs(EV, p_guess, tau)
-        q_tau = get_q_tau(omega)
-        omega_list.append(omega)
-        p_scrap_list.append(p_scrap)
-        q_list.append(q_tau)
+        # Obtenemos las probabilidades para este tipo
+        omega_t, p_scrap_t, p_keep_t = calc_probs(EV, p_guess, tau)
+        
+        # Obtenemos la distribución estacionaria q_tau = q_tau @ (omega @ Q_a)
+        q_t = get_q_tau(omega_t)
+        
+        # --- DEMANDA AGREGADA ---------
+        # Representa a dónde quieren saltar los agentes de este tipo
+        # Es q_t @ omega_t: un vector de n_states con la demanda de cada bien
+        demand_tau = q_t @ omega_t
+        
+        # --- OFERTA AGREGADA -------------
+        # Solo ofrecen coche los que NO se quedan con el suyo (1 - p_keep)
+        # Y de esos, solo los que NO lo chatarrizan (1 - p_scrap)
+        p_vender = (1 - p_keep_t) * (1 - p_scrap_t)
+        supply_tau = q_t * p_vender
+        
+        # Sumamos al total ponderando por la masa de este tipo de consumidor
+        total_demand += type_mass[tau] * demand_tau
+        total_supply += type_mass[tau] * supply_tau
+
+    # --- EQUILIBRIO DE MERCADO ---
     
-    q_tot = get_big_q(q_list)
+    # Calculamos el exceso de demanda bruto para todos los estados
+    ED_full = total_demand - total_supply
 
-    # ------ Demanda ---------------
-    Dem_list = np.array(n_types)
-    for tau in range(n_types):
-        demand = np.zeros(n_states)
-        q_t = q_list[tau]
-        omega_t = omega_list[tau]
-        demand = q_t @ omega_t
-        Dem_list[tau] = demand
+    # FILTRO: Oferta perfectamente elástica para coches nuevos.
+    # El optimizador solo debe ver el exceso de demanda de los coches usados.
+    # Los coches nuevos y el estado 0 no entran en el ajuste de precios.
     
-
-
-    # ------ Oferta ----------------
-    Supply_list = np.array(n_types)
+    # Supongamos que tienes una lista de índices que corresponden a coches usados
+    # (aquellos con edad > 0, edad < max_age, y que no son el estado s=0)
+    indices_usados = get_indices_usados() 
     
-    for tau in range(n_types):
-        supply = np.zeros(n_states)
-        q_t = q_list[tau]
-        omega_t = omega_list[tau]
-        p_scrap_t = p_scrap_list[tau]
+    # El vector que devolvemos tiene el mismo tamaño que p_guess
+    return ED_full[indices_usados]
 
-    # ------ ED -------------------
-    ED_list = Dem_list - Supply_list
-    ED = 0
-    for i, ED_item in ED_list:
-        ED += type_mass[i] * ED_item
 
-    return ED
 
+# Paso 7: Encontrar P -------------------------------------------------------------
+
+from scipy.optimize import root
+
+idx_usados = get_indices_usados()
+p_init = np.zeros(len(idx_usados))
+
+# Gemini me recomendó meterle un guess lineal de caída de precios
+# En general, por mi desconocimiento de scipy, gemini me ayudó mucho en cerrar esta parte
+for i, s_idx in enumerate(idx_usados):
+    p_new = precios_nuevos[get_brand(s_idx)] # Precio del coche nuevo de esa marca
+    edad = get_age(s_idx)
+    # Suponemos que cada año el valor cae un 15% como punto de partida
+    p_init[i] = p_new * (0.85 ** edad)
+
+
+def ED_wrapper(p_vec):
+    error_vec = ED(p_vec)
+    norma_error = np.linalg.norm(error_vec)
+    print(f"Iteración: Error promedio (norma): {norma_error:.4f}")
+    return error_vec
+
+print("Iniciando la búsqueda del equilibrio de mercado...")
+
+
+
+solucion = root(
+    fun=ED_wrapper, 
+    x0=p_init, 
+    method='hybr',
+    tol=1e-6
+)
+
+if solucion.success:
+    precios_equilibrio_usados = solucion.x
+    print("¡Éxito! Se encontró el vector de precios de equilibrio.")
+else:
+    print("No se pudo converger al equilibrio:", solucion.message)
+
+
+
+# Paso 8: Generar datos con P ----------------------------------------------------
 
 
 
