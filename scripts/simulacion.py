@@ -19,7 +19,10 @@
 
 import pandas as pd
 import numpy as np
-
+from scipy.special import logsumexp
+from scipy.optimize import root
+from scipy.optimize import least_squares
+import matplotlib.pyplot as plt
 
 # CODIGO ______________________________________________________________________
 
@@ -48,8 +51,8 @@ precios_nuevos = np.array([100, 170, 250])
 scrap_values = np.array([1, 5, 8])
 
 # Los costos de transacción
-t_b = 10
-t_s = 10
+t_b = 5
+t_s = 5
 
 # Depreciación por edad
 delta = 1
@@ -71,11 +74,11 @@ def get_idx(j, a):
 def get_brand(state):
     if state == 0:
         return None
-    return (state - 1) // 15
+    return (state - 1) // A_max
 def get_age(state):
     if state == 0:
         return 0
-    return ((state - 1) % 15) + 1
+    return ((state - 1) % A_max) + 1
 
 # Creamos un vector de scrap values para cada situación
 scrap_vec = np.zeros(n_states)
@@ -124,8 +127,7 @@ Q_a = np.zeros((n_states, n_states))
 Q_a[0, 0] = 1
 # Lista de edades máximas de coches
 max_ages = [get_idx(j, A_max) for j in range(J)]
-# Lista de edades nuevas de coches
-new_ages = [get_idx(j, 0) for j in range(J)]
+
 
 for j in range(J):
     for a in range(1, A_max + 1):
@@ -148,26 +150,20 @@ for j in range(J):
 if not np.allclose(Q_a.sum(axis=1), 1):
     print("Error: Hay filas en Q_a que no suman 1. Revisa los índices.")
 
+
+
 # Paso 3: Bellman ----------------------------------------------------------------------
 
 # Función para crear vector de precios para cada estado
 def get_P(precios_usados):
-    # Creamos vector de precios
     P = np.zeros(n_states)
-    # Precio de no coche es cero
-    P[0] = 0
-
-    k = 0
+    # 1. Ponemos precios de nuevos y scrap (fijos)
     for j in range(J):
-        for a in range(1, A_max + 1):
-            idx = get_idx(j, a)
-            if a == 1:
-                P[idx] = precios_nuevos[j]
-            elif a == A_max:
-                P[idx] = scrap_values[j]
-            else:
-                P[idx] = precios_usados[k]
-                k += 1
+        P[get_idx(j, 1)] = precios_nuevos[j]
+        P[get_idx(j, A_max)] = scrap_values[j]
+    
+    idx_usados = get_indices_usados()
+    P[idx_usados] = precios_usados
     return P
 
 
@@ -177,11 +173,6 @@ def sol_bellman(precios_usados):
     Toma un vector de precios de coches usados (excluidos los exógenos: nuevos y scrap), lo
     acomoda en un vector de precios y después crea la matriz EV (tipos x estados) a partir
     de la utilidad máxima que puede conseguir.
-
-    Hay un segundo objetivo en esta función: crear la matriz u_trade, la cual nos da la utilidad
-    inmediata de cada decisión según el vector P. Esta nos facilitará la creación de las probabilidades.
-    Puede que no sea lo más eficiente (tener que crearlo cada vez que se corre esta función). Pero
-    nos permite matar dos pajaros de un tiro en términos de redundancia del código.
     """
 
     P = get_P(precios_usados)
@@ -190,9 +181,6 @@ def sol_bellman(precios_usados):
     # Inicializamos en ceros
     EV = np.zeros((n_types, n_states))
     EV_new = np.zeros_like(EV)
-
-    # Inicializamos la matriz de funciones de valor
-    v_matrix = np.zeros((n_states, n_states))
 
     # Iteramos para encontrar punto fijo (decidí no hacer un algorítmo Newton por el tiempo)
     # Aquí los consumidores de distintos estados se encontrarán con sus posibles elecciones
@@ -226,8 +214,7 @@ def sol_bellman(precios_usados):
                     # Esto lo sacamos aquí para obtener las funciones de valor, pero
                     # en la siguiente función obtenemos su probabilidad para la demanda y oferta
                     m_salida = max(u_vender, u_scrap)
-                    v_disposal = m_salida + sigma * np.log(np.exp((u_vender - m_salida)/sigma) + 
-                                                   np.exp((u_scrap - m_salida)/sigma))
+                    v_disposal = (sigma * logsumexp(np.array([u_vender, u_scrap]) / sigma))
 
                 ### DECISIONES ---------------------------------------------------------------
                 #-------- MANTENER --------------------------------
@@ -264,11 +251,11 @@ def sol_bellman(precios_usados):
                 vals = np.array(v_alternativas)
                 max_val = np.max(vals)
                 # Hacemos esta transformación para no explotar exp(vals) -> inf (Gracias ChatGPT)
-                ev_val = max_val + sigma * np.log(np.sum(np.exp((vals - max_val)/ sigma)))
+                ev_val = sigma * logsumexp(vals / sigma)
                 EV_new[tau, s0] = ev_val
 
         # Si es menor al threshold, entonces decimos que es el punto fijo
-        if np.max(np.abs(EV_new - EV)) < 1e-16:
+        if np.max(np.abs(EV_new - EV)) < 1e-9:
             break
         # Copy porque namas así controlas los pointers del python xd (En R no es necesario, 
         # pero siento que arriesgas más memory overflow con estos procesos)
@@ -347,6 +334,25 @@ def calc_probs(EV, precios_guess, tau):
     # Sumamos la probabilidad de mantener en la diagonal (o donde s1 == s0)
     np.fill_diagonal(omega_tau, np.diag(omega_tau) + prob_keep)
 
+    if np.any(np.isnan(omega_tau)) or np.any(np.isinf(omega_tau)):
+        raise FloatingPointError("NaN o Inf detectado en omega_tau")
+
+    row_sums = omega_tau.sum(axis=1, keepdims=True)
+
+    zero_rows = (row_sums.flatten() == 0)
+
+    if np.any(zero_rows):
+        # Si ocurre, asigna prob uniforme condicionalmente a alternativas válidas
+        for i, zr in enumerate(zero_rows):
+            if zr:
+                valid = ~np.isneginf(v_trade[i, :])  # alternativas válidas
+                if valid.sum() == 0:
+                    omega_tau[i, 0] = 1.0  # fallback: quedarse sin coche
+                else:
+                    omega_tau[i, valid] = 1.0 / valid.sum()
+        row_sums = omega_tau.sum(axis=1, keepdims=True)
+
+    omega_tau = omega_tau / row_sums
     # Retornamos omega para calcular q y p_scrap_cond para calcular el exceso de demanda
     return omega_tau, p_scrap_cond, prob_keep
 
@@ -367,7 +373,6 @@ def get_q_tau(omega):
         if np.max(np.abs(q_new - q)) < 1e-13:
             return q_new
         q = q_new
-    print("No convergió")
     return q
 
 def get_big_q(q_list):
@@ -423,13 +428,20 @@ def ED(p_guess):
         # --- DEMANDA AGREGADA ---------
         # Representa a dónde quieren saltar los agentes de este tipo
         # Es q_t @ omega_t: un vector de n_states con la demanda de cada bien
-        demand_tau = q_t @ omega_t
+        prob_trade_matrix = omega_t.copy()
+        np.fill_diagonal(prob_trade_matrix, prob_trade_matrix.diagonal() - p_keep_t)
+        indices_usados = get_indices_usados()
+        for s1 in indices_usados:
+            demand_tau[s1] = np.sum(q_t * prob_trade_matrix[:, s1])
         
         # --- OFERTA AGREGADA -------------
         # Solo ofrecen coche los que NO se quedan con el suyo (1 - p_keep)
         # Y de esos, solo los que NO lo chatarrizan (1 - p_scrap)
-        p_vender = (1 - p_keep_t) * (1 - p_scrap_t)
-        supply_tau = q_t * p_vender
+        supply_tau = np.zeros(n_states)
+        for s0 in range(n_states):
+            if s0 == 0: continue
+            if s0 in max_ages: continue   # no se vende
+            supply_tau[s0] = q_t[s0] * (1 - p_keep_t[s0]) * (1 - p_scrap_t[s0])
         
         # Sumamos al total ponderando por la masa de este tipo de consumidor
         total_demand += type_mass[tau] * demand_tau
@@ -440,6 +452,8 @@ def ED(p_guess):
     # Calculamos el exceso de demanda bruto para todos los estados
     ED_full = total_demand - total_supply
 
+    print(sum(total_demand))
+    print(sum(total_supply))
     # FILTRO: Oferta perfectamente elástica para coches nuevos.
     # El optimizador solo debe ver el exceso de demanda de los coches usados.
     # Los coches nuevos y el estado 0 no entran en el ajuste de precios.
@@ -455,8 +469,6 @@ def ED(p_guess):
 
 # Paso 7: Encontrar P -------------------------------------------------------------
 
-from scipy.optimize import root
-
 idx_usados = get_indices_usados()
 p_init = np.zeros(len(idx_usados))
 
@@ -471,27 +483,37 @@ for i, s_idx in enumerate(idx_usados):
 
 def ED_wrapper(p_vec):
     error_vec = ED(p_vec)
+    if np.any(np.isnan(error_vec)) or np.any(np.isinf(error_vec)):
+        print("ED tiene NaN/Inf. p_vec mínimo/máximo:", np.min(p_vec), np.max(p_vec))
+        raise FloatingPointError("ED contiene NaN/Inf")
     norma_error = np.linalg.norm(error_vec)
     print(f"Iteración: Error promedio (norma): {norma_error:.4f}")
     return error_vec
 
+# -------------------------------------------------
+
 print("Iniciando la búsqueda del equilibrio de mercado...")
 
 
+# Scipy shit
+eps = 1e-6
+lb = np.ones_like(p_init) * eps
+ub = np.ones_like(p_init) * 1e6
 
-solucion = root(
-    fun=ED_wrapper, 
-    x0=p_init, 
-    method='hybr',
-    tol=1e-6
+res = least_squares(
+    fun=ED_wrapper,
+    x0=p_init,
+    bounds=(1e-6, np.inf),
+    xtol=1e-8,
+    ftol=1e-8,
+    gtol=1e-8,
+    max_nfev=200
 )
-
-if solucion.success:
-    precios_equilibrio_usados = solucion.x
-    print("¡Éxito! Se encontró el vector de precios de equilibrio.")
+if res.success:
+    precios_equilibrio_usados = res.x
+    print("least_squares convergió. norm error:", np.linalg.norm(ED(precios_equilibrio_usados)))
 else:
-    print("No se pudo converger al equilibrio:", solucion.message)
-
+    print("least_squares falló:", res.message)
 
 
 # Paso 8: Generar datos con P ----------------------------------------------------
