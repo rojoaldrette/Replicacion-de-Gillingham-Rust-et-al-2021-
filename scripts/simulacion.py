@@ -16,11 +16,8 @@
 # _____________________________________________________________________________
 
 # Notas para arreglar:
-# Estoy definiendo mal la demanda y eso hace que no cambie
-# La demanda es solo sobre bienes transeables j\in {1, ..., J} y a\in{1, ..., 14} (existe edad 0)
-# Mi pedo también es que puse a iniciando en 1 y eso me confundió xd
-# Namas hay que arreglar demanda para q si varíe con P y espero eso funcione xd
-# Checar Chatgpt
+# Chance corregir alpha y su intima relación con el coche de calidad 1
+# No se están vendiendo coches de calidad 1 y 2
 
 # PREAMBULO ___________________________________________________________________
 
@@ -47,7 +44,7 @@ n_types = 2
 # Proporción agentes
 type_mass = [0.5, 0.5]
 # Sus mu's (efectos riqueza)
-mus = np.array([0.3, 0.1])
+mus = np.array([0.5, 0.2])
 # Correlación entre elecciones
 sigma = 1
 
@@ -55,15 +52,15 @@ sigma = 1
 
 # Hay 3 coches con distintas calidades y precios
 calidad_x = np.array([10, 20, 30]) 
-precios_nuevos = np.array([100, 170, 250])
+precios_nuevos = np.array([80, 140, 250])
 scrap_values = np.array([1, 5, 8])
 
 # Los costos de transacción
-t_b = 7
+t_b = 5
 t_s = 5
 
 # Depreciación por edad
-delta = 0.8
+delta = 0.9
 
 
 # Paso 2. Infraestructura y utilidad ---------------------------------------------------------
@@ -173,102 +170,6 @@ def get_P(precios_usados):
     idx_usados = get_indices_usados()
     P[idx_usados] = precios_usados
     return P
-
-
-def sol_bellman(precios_usados):
-    """
-    Esta función encuentra el punto fijo EV para la bellman con los parámetros que creamos.
-    Toma un vector de precios de coches usados (excluidos los exógenos: nuevos y scrap), lo
-    acomoda en un vector de precios y después crea la matriz EV (tipos x estados) a partir
-    de la utilidad máxima que puede conseguir.
-    """
-
-    P = get_P(precios_usados)
-
-    # Hacemos la matriz de funciones de valor
-    # Inicializamos en ceros
-    EV = np.zeros((n_types, n_states))
-    EV_new = np.zeros_like(EV)
-
-    # Iteramos para encontrar punto fijo (decidí no hacer un algorítmo Newton por el tiempo)
-    # Aquí los consumidores de distintos estados se encontrarán con sus posibles elecciones
-    for _ in range(500):
-        # Valor inicial de E[V]=EV*Q_a.T
-        EV_next = np.dot(EV, Q_a.T)
-
-        for tau in range(n_types):
-            mu = mus[tau]
-
-            for s0 in range(n_states):
-                # Lista de opciones
-                v_alternativas = []
-                # Marca del coche
-
-                # -- Valor de venta/scrap ------------------
-                if s0 == 0:
-                    v_disposal = 0
-                else:
-                    brand = get_brand(s0)
-                    u_vender = mu * (P[s0] - t_s)
-                    u_scrap  = mu * scrap_values[brand]
-            
-                    # Si el coche es terminal, no se puede vender a particular
-                    if s0 in max_ages:
-                        u_vender = -np.inf 
-            
-                    # Aplicamos Log-Sum-Exp para el valor de salida (v_disposal)
-                    # Esto representa el valor esperado de elegir entre vender o chatarrizar
-                    # i.e. sacar la probabilidad de escoger alguno de los dos
-                    # Esto lo sacamos aquí para obtener las funciones de valor, pero
-                    # en la siguiente función obtenemos su probabilidad para la demanda y oferta
-                    v_disposal = (sigma * logsumexp(np.array([u_vender, u_scrap]) / sigma))
-
-                ### DECISIONES ---------------------------------------------------------------
-                #-------- MANTENER --------------------------------
-                ## Sin coche
-                if s0 == 0:
-                    v_keep = u_matrix[tau, 0] + beta * EV_next[tau, 0]
-                    v_alternativas.append(v_keep)
-                ## Con coche
-                elif s0 in max_ages:
-                    v_keep = -np.inf
-                    v_alternativas.append(v_keep)
-                else:
-                    v_keep = u_matrix[tau, s0] + beta * EV_next[tau, s0]
-                    v_alternativas.append(v_keep)
-                
-                # COMPRAR COCHE / TRADE -------------------------
-                # Iteramos sobre todos los coches (incluido el no coche)
-                for s1 in range(n_states):
-                    # Si es un estado sin coche
-                    costo_compra = (P[s1] + t_b) * mu
-                    if s1 == 0:
-                        costo_compra = 0
-                    # Si el coche está en edad terminal
-                    elif s1 in max_ages:
-                        # Si el coche tiene edad máxima, entonces no se puede comprar
-                        # Se puede comprar máximo en edad A_max - 1
-                        # Continuamos a la siguiente iteración
-                        continue
-                    # Obtenemos utilidad de adquirir cada coche
-                    u_trade = u_matrix[tau, s1] - costo_compra + v_disposal + beta * EV_next[tau, s1]
-                    v_alternativas.append(u_trade)
-
-                # Calculamos su EV a partir del valor máximo que puede conseguir
-                vals = np.array(v_alternativas)
-                # Hacemos esta transformación para no explotar exp(vals) -> inf (Gracias ChatGPT)
-                ev_val = sigma * logsumexp(vals / sigma)
-                EV_new[tau, s0] = ev_val
-
-        # Si es menor al threshold, entonces decimos que es el punto fijo
-        if np.max(np.abs(EV_new - EV)) < 1e-9:
-            break
-        # Copy porque namas así controlas los pointers del python xd (En R no es necesario, 
-        # pero siento que arriesgas más memory overflow con estos procesos)
-        EV = EV_new.copy()
-
-    # Regresamos el punto fijo
-    return EV
 
 
 
@@ -440,7 +341,7 @@ def sol_bellman_vectorized(precios_usados):
                        + v_disposal[:, None] 
                        + beta * EV_next[tau, :][None, :])
             
-            v_trade[:, max_ages] = -1e10 # No se compran terminales
+            v_trade[:, max_ages] = -np.inf # No se compran terminales
             # Opción especial: Volver a s=0 (No comprar nada tras vender)
             v_trade[:, 0] = 0 + v_disposal + beta * EV_next[tau, 0]
 
@@ -612,6 +513,7 @@ def graficar_distribucion(p_final):
     for tau in range(n_types):
         print(f"Tipo {tau+1} sin coche: {dist_tipos[tau][0]:.2%}")
 
+graficar_distribucion(precios_equilibrio_usados)
 
 # Paso 8: Generar datos con P ----------------------------------------------------
 
