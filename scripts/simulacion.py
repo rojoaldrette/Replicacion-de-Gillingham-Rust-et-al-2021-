@@ -58,11 +58,11 @@ precios_nuevos = np.array([100, 170, 250])
 scrap_values = np.array([1, 5, 8])
 
 # Los costos de transacción
-t_b = 5
+t_b = 7
 t_s = 5
 
 # Depreciación por edad
-delta = 1
+delta = 0.8
 
 
 # Paso 2. Infraestructura y utilidad ---------------------------------------------------------
@@ -220,7 +220,6 @@ def sol_bellman(precios_usados):
                     # i.e. sacar la probabilidad de escoger alguno de los dos
                     # Esto lo sacamos aquí para obtener las funciones de valor, pero
                     # en la siguiente función obtenemos su probabilidad para la demanda y oferta
-                    m_salida = max(u_vender, u_scrap)
                     v_disposal = (sigma * logsumexp(np.array([u_vender, u_scrap]) / sigma))
 
                 ### DECISIONES ---------------------------------------------------------------
@@ -256,7 +255,6 @@ def sol_bellman(precios_usados):
 
                 # Calculamos su EV a partir del valor máximo que puede conseguir
                 vals = np.array(v_alternativas)
-                max_val = np.max(vals)
                 # Hacemos esta transformación para no explotar exp(vals) -> inf (Gracias ChatGPT)
                 ev_val = sigma * logsumexp(vals / sigma)
                 EV_new[tau, s0] = ev_val
@@ -344,22 +342,6 @@ def calc_probs(EV, precios_guess, tau):
     if np.any(np.isnan(omega_tau)) or np.any(np.isinf(omega_tau)):
         raise FloatingPointError("NaN o Inf detectado en omega_tau")
 
-    row_sums = omega_tau.sum(axis=1, keepdims=True)
-
-    zero_rows = (row_sums.flatten() == 0)
-
-    if np.any(zero_rows):
-        # Si ocurre, asigna prob uniforme condicionalmente a alternativas válidas
-        for i, zr in enumerate(zero_rows):
-            if zr:
-                valid = ~np.isneginf(v_trade[i, :])  # alternativas válidas
-                if valid.sum() == 0:
-                    omega_tau[i, 0] = 1.0  # fallback: quedarse sin coche
-                else:
-                    omega_tau[i, valid] = 1.0 / valid.sum()
-        row_sums = omega_tau.sum(axis=1, keepdims=True)
-
-    omega_tau = omega_tau / row_sums
     # Retornamos omega para calcular q y p_scrap_cond para calcular el exceso de demanda
     return omega_tau, p_scrap_cond, prob_keep
 
@@ -438,6 +420,7 @@ def ED(p_guess):
         prob_trade_matrix = omega_t.copy()
         np.fill_diagonal(prob_trade_matrix, prob_trade_matrix.diagonal() - p_keep_t)
         indices_usados = get_indices_usados()
+        demand_tau = np.zeros(n_states)
         for s1 in indices_usados:
             demand_tau[s1] = np.sum(q_t * prob_trade_matrix[:, s1])
         
