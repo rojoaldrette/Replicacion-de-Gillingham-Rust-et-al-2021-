@@ -26,8 +26,9 @@
 
 import pandas as pd
 import numpy as np
+import time
+from datetime import timedelta
 from scipy.special import logsumexp
-from scipy.optimize import root
 from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
 
@@ -399,62 +400,114 @@ def get_indices_usados():
             
     return np.array(indices_usados)
 
-def ED(p_guess):
-    # 1. Resolver el problema del consumidor
-    EV = sol_bellman(p_guess)
     
-    # Inicializamos agregadores de mercado
+def sol_bellman_vectorized(precios_usados):
+    P = get_P(precios_usados)
+    EV = np.zeros((n_types, n_states))
+    
+    # Pre-calculamos utilidades de salida (v_disposal) para todos los estados
+    # s0=0 -> 0, s0>0 -> logsumexp(vender, chatarrizar)
+    u_vender_base = (P - t_s) # Vector de n_states
+    u_scrap_base = scrap_vec
+    
+    for _ in range(500):
+        EV_next = EV @ Q_a.T
+        EV_old = EV.copy()
+        
+        for tau in range(n_types):
+            mu = mus[tau]
+            
+            # Valor de deshacerse del coche actual
+            u_v = mu * u_vender_base
+            u_v[max_ages] = -np.inf # No se venden terminales
+            u_v[0] = -np.inf        # No se vende el "no tener coche"
+            u_s = mu * u_scrap_base
+            u_s[0] = -np.inf
+            
+            # v_disposal[s0]
+            v_disposal = sigma * logsumexp(np.vstack([u_v, u_s]) / sigma, axis=0)
+            v_disposal[0] = 0 # El que no tiene coche no gana nada por "vender"
+            
+            # Opción MANTENER: v_keep[s0]
+            v_keep = u_matrix[tau, :] + beta * EV_next[tau, :]
+            v_keep[max_ages] = -np.inf # Forzado a chatarrizar
+            
+            # Opción TRADE: v_trade[s0, s1] 
+            # (Utilidad de s1 - costo s1 + v_disposal de s0 + valor futuro s1)
+            # Usamos broadcasting: (n_states, 1) + (1, n_states)
+            v_trade = (u_matrix[tau, :][None, :] 
+                       - mu * (P + t_b)[None, :] 
+                       + v_disposal[:, None] 
+                       + beta * EV_next[tau, :][None, :])
+            
+            v_trade[:, max_ages] = -1e10 # No se compran terminales
+            # Opción especial: Volver a s=0 (No comprar nada tras vender)
+            v_trade[:, 0] = 0 + v_disposal + beta * EV_next[tau, 0]
+
+            # Bellman Update: LogSumExp sobre todas las opciones
+            # Para cada s0, el agente elige entre {mantener, trade_s1, trade_s2...}
+            choices = np.hstack([v_keep[:, None], v_trade]) # (n_states, 1 + n_states)
+            EV[tau, :] = sigma * logsumexp(choices / sigma, axis=1)
+
+        if np.max(np.abs(EV - EV_old)) < 1e-8:
+            break
+    return EV
+
+def ED(p_guess):
+    EV = sol_bellman_vectorized(p_guess)
+    P = get_P(p_guess)
+    
     total_demand = np.zeros(n_states)
     total_supply = np.zeros(n_states)
-
+    
     for tau in range(n_types):
-        # Obtenemos las probabilidades para este tipo
-        omega_t, p_scrap_t, p_keep_t = calc_probs(EV, p_guess, tau)
+        mu = mus[tau]
+        EV_next = EV @ Q_a.T
         
-        # Obtenemos la distribución estacionaria q_tau = q_tau @ (omega @ Q_a)
-        q_t = get_q_tau(omega_t)
+        # 1. Probabilidades de salida (Scrap vs Sell)
+        u_v = mu * (P - t_s)
+        u_v[max_ages] = -1e10
+        u_s = mu * scrap_vec
+        # Prob condicional de scrap dado que decides salir
+        # P(scrap | disposal) = exp(u_s/sigma) / (exp(u_s/sigma) + exp(u_v/sigma))
+        p_scrap_cond = np.exp(u_s/sigma) / (np.exp(u_s/sigma) + np.exp(u_v/sigma))
+        p_scrap_cond[0] = 0
+
+        # 2. Matrices de decisión
+        v_keep = u_matrix[tau, :] + beta * EV_next[tau, :]
+        v_keep[max_ages] = -1e10
         
-        # --- DEMANDA AGREGADA ---------
-        # Representa a dónde quieren saltar los agentes de este tipo
-        # Es q_t @ omega_t: un vector de n_states con la demanda de cada bien
-        prob_trade_matrix = omega_t.copy()
-        np.fill_diagonal(prob_trade_matrix, prob_trade_matrix.diagonal() - p_keep_t)
-        indices_usados = get_indices_usados()
-        demand_tau = np.zeros(n_states)
-        for s1 in indices_usados:
-            demand_tau[s1] = np.sum(q_t * prob_trade_matrix[:, s1])
+        # v_disposal igual que en Bellman
+        v_disposal = sigma * logsumexp(np.vstack([mu*(P-t_s), mu*scrap_vec])/sigma, axis=0)
+        v_disposal[0] = 0
+        v_disposal[max_ages] = mu * scrap_vec[max_ages] # Forzado a scrap
         
-        # --- OFERTA AGREGADA -------------
-        # Solo ofrecen coche los que NO se quedan con el suyo (1 - p_keep)
-        # Y de esos, solo los que NO lo chatarrizan (1 - p_scrap)
-        supply_tau = np.zeros(n_states)
-        for s0 in range(n_states):
-            if s0 == 0: continue
-            if s0 in max_ages: continue   # no se vende
-            supply_tau[s0] = q_t[s0] * (1 - p_keep_t[s0]) * (1 - p_scrap_t[s0])
+        v_trade = (u_matrix[tau, :][None, :] - mu*(P+t_b)[None, :] + 
+                   v_disposal[:, None] + beta*EV_next[tau, :][None, :])
+        v_trade[:, max_ages] = -1e10
+        v_trade[:, 0] = v_disposal + beta*EV_next[tau, 0]
+
+        # Probabilidades Logit puras (sin normalizar a mano, el denominador es exp(EV/sigma))
+        prob_keep = np.exp((v_keep - EV[tau, :]) / sigma)
+        prob_trade_mat = np.exp((v_trade - EV[tau, :][:, None]) / sigma)
         
-        # Sumamos al total ponderando por la masa de este tipo de consumidor
+        # 3. Distribución Estacionaria
+        omega = prob_trade_mat.copy()
+        np.fill_diagonal(omega, np.diag(omega) + prob_keep)
+        q_t = get_q_tau(omega)
+        
+        # 4. Oferta y Demanda
+        # Demanda de s1: sum_{s0} q(s0) * P(trade to s1 | s0)
+        demand_tau = q_t @ prob_trade_mat
+        
+        # Oferta de s0: q(s0) * P(no keep) * P(no scrap | no keep)
+        supply_tau = q_t * (1 - prob_keep) * (1 - p_scrap_cond)
+        
         total_demand += type_mass[tau] * demand_tau
         total_supply += type_mass[tau] * supply_tau
 
-    # --- EQUILIBRIO DE MERCADO ---
-    
-    # Calculamos el exceso de demanda bruto para todos los estados
-    ED_full = total_demand - total_supply
-
-    print(sum(total_demand))
-    print(sum(total_supply))
-    # FILTRO: Oferta perfectamente elástica para coches nuevos.
-    # El optimizador solo debe ver el exceso de demanda de los coches usados.
-    # Los coches nuevos y el estado 0 no entran en el ajuste de precios.
-    
-    # Supongamos que tienes una lista de índices que corresponden a coches usados
-    # (aquellos con edad > 0, edad < max_age, y que no son el estado s=0)
-    indices_usados = get_indices_usados() 
-    
-    # El vector que devolvemos tiene el mismo tamaño que p_guess
-    return ED_full[indices_usados]
-
+    idx_u = get_indices_usados()
+    return (total_demand - total_supply)[idx_u]
 
 
 # Paso 7: Encontrar P -------------------------------------------------------------
@@ -477,7 +530,7 @@ def ED_wrapper(p_vec):
         print("ED tiene NaN/Inf. p_vec mínimo/máximo:", np.min(p_vec), np.max(p_vec))
         raise FloatingPointError("ED contiene NaN/Inf")
     norma_error = np.linalg.norm(error_vec)
-    print(f"Iteración: Error promedio (norma): {norma_error:.4f}")
+    print(f"Iteración: Error promedio (norma): {norma_error:.8f}")
     return error_vec
 
 # -------------------------------------------------
@@ -485,10 +538,14 @@ def ED_wrapper(p_vec):
 print("Iniciando la búsqueda del equilibrio de mercado...")
 
 
-# Scipy shit
+
+# Scipy shit ---------------------------------------
 eps = 1e-6
 lb = np.ones_like(p_init) * eps
 ub = np.ones_like(p_init) * 1e6
+
+
+start_time = time.perf_counter()
 
 res = least_squares(
     fun=ED_wrapper,
@@ -504,6 +561,56 @@ if res.success:
     print("least_squares convergió. norm error:", np.linalg.norm(ED(precios_equilibrio_usados)))
 else:
     print("least_squares falló:", res.message)
+
+end_time = time.perf_counter()
+elapsed_time_secs = end_time - start_time
+
+# For a human-readable format
+msg = f"Execution took: {timedelta(seconds=round(elapsed_time_secs))} (Wall clock time)"
+print(msg)
+
+
+# Graficas
+def graficar_distribucion(p_final):
+    # 1. Obtenemos el EV final y las distribuciones
+    EV = sol_bellman_vectorized(p_final)
+    dist_tipos = []
+    
+    for tau in range(n_types):
+        omega_t, _, p_keep_t = calc_probs(EV, p_final, tau) # Usa tu calc_probs corregida
+        q_t = get_q_tau(omega_t)
+        dist_tipos.append(q_t)
+
+    # 2. Preparar datos para graficar por marca
+    fig, axes = plt.subplots(1, J, figsize=(15, 5), sharey=True)
+    nombres_tipos = ['Pobre (mu=0.3)', 'Rico (mu=0.1)']
+    colores = ['#e74c3c', '#3498db']
+
+    for j in range(J):
+        ax = axes[j]
+        edades = np.arange(1, A_max + 1)
+        
+        for tau in range(n_types):
+            # Extraemos la masa de cada edad para la marca j
+            indices_marca = [get_idx(j, a) for a in edades]
+            masa_marca = dist_tipos[tau][indices_marca]
+            
+            ax.plot(edades, masa_marca, label=nombres_tipos[tau], 
+                    color=colores[tau], marker='o', markersize=4)
+        
+        ax.set_title(f"Marca {j+1} (Calidad: {calidad_x[j]})")
+        ax.set_xlabel("Edad del coche")
+        if j == 0: ax.set_ylabel("Densidad de población (q)")
+        ax.grid(alpha=0.3)
+        ax.legend()
+
+    plt.suptitle("Distribución Estacionaria de Tenencia de Vehículos", fontsize=14)
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
+
+    # 3. Print de estado "Sin Coche" (Estado 0)
+    for tau in range(n_types):
+        print(f"Tipo {tau+1} sin coche: {dist_tipos[tau][0]:.2%}")
 
 
 # Paso 8: Generar datos con P ----------------------------------------------------
