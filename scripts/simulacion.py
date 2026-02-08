@@ -49,17 +49,18 @@ type_mass = [0.5, 0.5]
 # Sus mu's (efectos riqueza)
 mus = np.array([0.5, 0.2])
 # Correlación entre elecciones
-sigma = 1
+sigma = 7
 
 
 
 # Hay 3 coches con distintas calidades y precios
-calidad_x = np.array([75, 75, 85]) 
-precios_nuevos = np.array([60, 180, 400])
-scrap_values = np.array([15, 12, 12])
+calidad_x = np.array([60, 75, 85]) 
+precios_nuevos = np.array([80, 180, 400])
+scrap_values = np.array([1, 1, 1])
+costo_mant = np.array([10, 10, 10])
 
 # Los costos de transacción
-t_b = 5
+t_b = 10
 t_s = 5
 
 # Depreciación por edad
@@ -126,7 +127,7 @@ def alpha(j, a):
         prob = 1
     else:
         # Función creciente en a y decreciente en j (calidad)
-        prob = (a/(5 * A_max)) + ((3-j) / 20)
+        prob = (a/(5 * A_max)) + ((3 - j) / 40)
     return prob
 
 
@@ -476,49 +477,67 @@ msg = f"Execution took: {timedelta(seconds=round(elapsed_time_secs))} (Wall cloc
 print(msg)
 
 
-# Graficas
-def graficar_distribucion(p_final):
-    # 1. Obtenemos el EV final y las distribuciones
+# ---------------------------------------------------------
+
+def get_info(p_final):
     EV = sol_bellman_vectorized(p_final)
     dist_tipos = []
+    omega = []
+    p_trade_1 = []
     
     for tau in range(n_types):
-        omega_t, _, p_keep_t = calc_probs(EV, p_final, tau) # Usa tu calc_probs corregida
+        omega_t, p_trade, p_keep_t = calc_probs(EV, p_final, tau) # Usa tu calc_probs corregida
         q_t = get_q_tau(omega_t)
         dist_tipos.append(q_t)
+        omega.append(omega_t)
+        p_trade_1.append(p_trade)
+    
+    q_final = get_big_q(dist_tipos)
+    return q_final, dist_tipos, p_trade_1, omega
+    
 
-    # 2. Preparar datos para graficar por marca
+# Graficas
+def graficar_distribucion(p_final):
+    # 1. Obtenemos EV y las q estacionarias
+    EV = sol_bellman_vectorized(p_final)
+    _, dist_tipos, a, b = get_info(p_final) # Asumiendo que get_info devuelve (q_agg, [q_tau])
+
     fig, axes = plt.subplots(1, J, figsize=(15, 5), sharey=True)
     nombres_tipos = ['Pobre (mu=0.3)', 'Rico (mu=0.1)']
     colores = ['#e74c3c', '#3498db']
 
     for j in range(J):
         ax = axes[j]
-        edades = np.arange(2, A_max + 1)
+        edades = np.arange(1, A_max + 1) # <--- Cambiado a 1 para ver coches nuevos
         
         for tau in range(n_types):
-            # Extraemos la masa de cada edad para la marca j
+            # Calculamos la omega de este tipo y su distribución post-decisión
+            omega_t = calc_probs(EV, p_final, tau)[0]
+            q_post = dist_tipos[tau] @ omega_t # <--- Aquí ocurre la magia q @ omega
+            
             indices_marca = [get_idx(j, a) for a in edades]
-            masa_marca = dist_tipos[tau][indices_marca]
+            masa_marca = q_post[indices_marca] 
             
             ax.plot(edades, masa_marca, label=nombres_tipos[tau], 
                     color=colores[tau], marker='o', markersize=4)
         
         ax.set_title(f"Marca {j+1} (Calidad: {calidad_x[j]})")
         ax.set_xlabel("Edad del coche")
-        if j == 0: ax.set_ylabel("Densidad de población (q)")
+        if j == 0: ax.set_ylabel("Densidad post-decisión (q*)")
         ax.grid(alpha=0.3)
         ax.legend()
 
-    plt.suptitle("Distribución Estacionaria de Tenencia de Vehículos", fontsize=14)
+    plt.suptitle("Distribución de Tenencia (Post-Trade, Pre-Envejecimiento)", fontsize=14)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-    # 3. Print de estado "Sin Coche" (Estado 0)
-    for tau in range(n_types):
-        print(f"Tipo {tau+1} sin coche: {dist_tipos[tau][0]:.2%}")
-
 graficar_distribucion(precios_equilibrio_usados)
+
+
+q_final, q_ss, omega_trade, omega_f = get_info(precios_equilibrio_usados)
+
+
+
 
 # Paso 8: Generar datos con P ----------------------------------------------------
 
