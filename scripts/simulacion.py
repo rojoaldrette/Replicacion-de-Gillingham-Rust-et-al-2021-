@@ -46,21 +46,21 @@ type_mass = [0.5, 0.5]
 # Sus mu's (efectos riqueza)
 mus = np.array([0.5, 0.2])
 # Correlación entre elecciones
-sigma = 1
+sigma = 2
 
 
 
 # Hay 3 coches con distintas calidades y precios
-calidad_x = np.array([10, 20, 30]) 
-precios_nuevos = np.array([80, 140, 250])
-scrap_values = np.array([1, 5, 8])
+calidad_x = np.array([17, 50, 50]) 
+precios_nuevos = np.array([80, 140, 350])
+scrap_values = np.array([7, 8, 10])
 
 # Los costos de transacción
-t_b = 5
-t_s = 5
+t_b = 0
+t_s = 0
 
 # Depreciación por edad
-delta = 0.9
+delta = 0.8
 
 
 # Paso 2. Infraestructura y utilidad ---------------------------------------------------------
@@ -455,7 +455,7 @@ res = least_squares(
     xtol=1e-8,
     ftol=1e-8,
     gtol=1e-8,
-    max_nfev=200
+    max_nfev=1000
 )
 if res.success:
     precios_equilibrio_usados = res.x
