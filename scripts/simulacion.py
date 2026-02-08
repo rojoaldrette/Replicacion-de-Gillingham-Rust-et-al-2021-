@@ -57,7 +57,7 @@ sigma = 7
 calidad_x = np.array([60, 75, 85]) 
 precios_nuevos = np.array([80, 180, 400])
 scrap_values = np.array([1, 1, 1])
-costo_mant = np.array([10, 10, 10])
+costo_mant = np.array([10, 10, 10]) # Aún no tiene esta implementación
 
 # Los costos de transacción
 t_b = 10
