@@ -15,12 +15,7 @@
 #
 # _____________________________________________________________________________
 
-# Notas para arreglar:
-# Estoy definiendo mal la demanda y eso hace que no cambie
-# La demanda es solo sobre bienes transeables j\in {1, ..., J} y a\in{1, ..., 14} (existe edad 0)
-# Mi pedo también es que puse a iniciando en 1 y eso me confundió xd
-# Namas hay que arreglar demanda para q si varíe con P y espero eso funcione xd
-# Checar Chatgpt
+# Ya está funcionando!!
 
 # PREAMBULO ___________________________________________________________________
 
@@ -77,7 +72,8 @@ n_states = 1 + J * A_max
 
 # Índice lineal para los estados
 def get_idx(j, a):
-    if j is None: return 0 # Estado "sin coche"
+    if j is None: 
+        return 0 # Estado "sin coche"
     return 1 + j * A_max + (a - 1)
 # Inversos a get_idx
 def get_brand(state):
@@ -446,38 +442,44 @@ print("Iniciando la búsqueda del equilibrio de mercado...")
 
 
 # Scipy shit ---------------------------------------
-eps = 1e-6
-lb = np.ones_like(p_init) * eps
-ub = np.ones_like(p_init) * 1e6
+
+def obtener_p_optimo():
+
+    start_time = time.perf_counter()
+
+    res = least_squares(
+        fun=ED_wrapper,
+        x0=p_init,
+        bounds=(1e-6, np.inf),
+        xtol=1e-8,
+        ftol=1e-8,
+        gtol=1e-8,
+        max_nfev=500
+    )
+
+    if res.success:
+        precios_equilibrio_usados = res.x
+        print("least_squares convergió. norm error:", np.linalg.norm(ED(precios_equilibrio_usados)))
+    else:
+        print("least_squares falló:", res.message)
+
+    end_time = time.perf_counter()
+    elapsed_time_secs = end_time - start_time
+
+    # For a human-readable format
+    msg = f"Execution took: {timedelta(seconds=round(elapsed_time_secs))} (Wall clock time)"
+    print(msg)
+
+    np.save("precios_optimizados.npy", precios_equilibrio_usados)
+    
+    return precios_equilibrio_usados
+
+precios_equilibrio_usados = obtener_p_optimo(p_init)
 
 
-start_time = time.perf_counter()
-
-res = least_squares(
-    fun=ED_wrapper,
-    x0=p_init,
-    bounds=(1e-6, np.inf),
-    xtol=1e-8,
-    ftol=1e-8,
-    gtol=1e-8,
-    max_nfev=500
-)
-
-if res.success:
-    precios_equilibrio_usados = res.x
-    print("least_squares convergió. norm error:", np.linalg.norm(ED(precios_equilibrio_usados)))
-else:
-    print("least_squares falló:", res.message)
-
-end_time = time.perf_counter()
-elapsed_time_secs = end_time - start_time
-
-# For a human-readable format
-msg = f"Execution took: {timedelta(seconds=round(elapsed_time_secs))} (Wall clock time)"
-print(msg)
 
 
-# ---------------------------------------------------------
+#  POSAMBULO ---------------------------------------------------------
 
 def get_info(p_final):
     EV = sol_bellman_vectorized(p_final)
@@ -523,7 +525,8 @@ def graficar_distribucion(p_final):
         
         ax.set_title(f"Marca {j+1} (Calidad: {calidad_x[j]})")
         ax.set_xlabel("Edad del coche")
-        if j == 0: ax.set_ylabel("Densidad post-decisión (q*)")
+        if j == 0: 
+            ax.set_ylabel("Densidad post-decisión (q*)")
         ax.grid(alpha=0.3)
         ax.legend()
 
@@ -531,19 +534,12 @@ def graficar_distribucion(p_final):
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.show()
 
-graficar_distribucion(precios_equilibrio_usados)
-
 
 q_final, q_ss, omega_trade, omega_f = get_info(precios_equilibrio_usados)
 
 
-
-
-# Paso 8: Generar datos con P ----------------------------------------------------
-
-
-
-# Paso 3: Simulación ---------------------------------------------------------------
+if __name__ == "__main__":
+    graficar_distribucion(precios_equilibrio_usados)
 
 
 
