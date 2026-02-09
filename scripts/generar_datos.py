@@ -2,13 +2,13 @@
 #
 # Proyecto:       Simulacion_Gillingham
 #
-# Script:         scripts/simulacion.py
+# Script:         scripts/generar_datos.py
 # Objetivo:
 #
 # Autor:          Rodrigo Antonio Aldrette Salas
 # Correo(s):      raaldrettes@colmex.mx
 #
-# Fecha:          29/01/2026
+# Fecha:          08/02/2026
 # 
 # Última
 # actualización:  29/01/2026
@@ -21,8 +21,8 @@
 
 import numpy as np
 import pandas as pd
-from simulacion import sol_bellman_vectorized, calc_probs, get_idx, get_P, get_brand, get_age
 import simulacion as sim
+
 
 
 # CÓDIGO ______________________________________________________________________
@@ -32,9 +32,17 @@ def cargar_precios():
         precios = np.load("precios_optimizados.npy")
         return precios
     except FileNotFoundError:
-        return "Error: No existe el archivo. Corre la simulación primero."
+        precios_optimos = sim.ejecutar_optimizacion()
+        print("Error: No existe el archivo. Corriendo la simulación.")
+        return precios_optimos
 
-precios = get_P(cargar_precios())
+precios = cargar_precios()
+
+
+def gen_datos(precios_usados, N, ):
+
+    P = sim.get_P(precios_usados)
+    q_final, q_ss, p_trade, omegas = sim.get_info(P)
 
 
 

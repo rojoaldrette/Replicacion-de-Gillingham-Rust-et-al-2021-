@@ -17,15 +17,16 @@
 
 
 import simulacion
-import datos
+import generar_datos
+
 
 def run():
     print("Iniciando proyecto...")
     # 1. Obtener el valor crítico de la simulación
-    #valor_critico = simulacion.ejecutar_optimizacion()
+    valor_critico = simulacion.ejecutar_optimizacion()
     
     # 2. Pasar ese valor a datos.py para procesarlo
-    #datos.procesar_resultado(valor_critico)
+    generar_datos.procesar_resultado(valor_critico)
 
 if __name__ == "__main__":
     run()

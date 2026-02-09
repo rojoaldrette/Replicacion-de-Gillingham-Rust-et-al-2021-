@@ -27,6 +27,9 @@ from scipy.special import logsumexp
 from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
 
+# Cargar los parámetros para la simulación
+import config
+
 # CODIGO ______________________________________________________________________
 
 # Paso 1: Establecer parámetros ---------------------------------------------------------------
@@ -447,6 +450,7 @@ def obtener_p_optimo():
 
     start_time = time.perf_counter()
 
+    precios_equilibrio_usados = np.zeros(len(get_indices_usados()))
     res = least_squares(
         fun=ED_wrapper,
         x0=p_init,
@@ -474,7 +478,7 @@ def obtener_p_optimo():
     
     return precios_equilibrio_usados
 
-precios_equilibrio_usados = obtener_p_optimo(p_init)
+
 
 
 
@@ -535,11 +539,13 @@ def graficar_distribucion(p_final):
     plt.show()
 
 
-q_final, q_ss, omega_trade, omega_f = get_info(precios_equilibrio_usados)
 
 
 if __name__ == "__main__":
+    precios_equilibrio_usados = obtener_p_optimo()
+    q_final, q_ss, omega_trade, omega_f = get_info(precios_equilibrio_usados)
     graficar_distribucion(precios_equilibrio_usados)
+
 
 
 

@@ -4,7 +4,7 @@ Bienvenidos a este readme. El proyecto está hecho en el IDE Positron, un fork d
 
 ## Objetivo del proyecto
 
-Este proyecto tiene el objetivo de simular una economía con los comportamientos descritos en Gillingham, Rust, et al. (2021). El proyecto tiene dos partes: 1) La simulación de la economía alimentada de parámetros escogidos; 2) Simulación de datos a la Monte-Carlo y 3) La estimación de los parámetros a partir de los datos observados.
+Este proyecto tiene el objetivo de simular una economía con los comportamientos descritos en Gillingham, Rust, et al. (2021). El proyecto tiene tres partes: 1) La simulación de la economía alimentada de parámetros escogidos; 2) Simulación de datos a la Monte-Carlo y 3) La estimación de los parámetros a partir de los datos observados.
 
 ## Scripts
 
