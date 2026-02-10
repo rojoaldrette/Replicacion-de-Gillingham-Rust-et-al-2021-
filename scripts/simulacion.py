@@ -239,11 +239,10 @@ def calc_probs(EV, precios_guess, tau):
     idx = np.arange(n_states)
     omega_tau[idx, idx] += prob_keep # Sumar la opción de mantener a la diagonal
 
-
     # Este check ahora debería pasar perfecto
     if not np.allclose(omega_tau.sum(axis=1), 1, atol=1e-10):
         # Normalización de seguridad por errores de punto flotante
-        print("No suma 1 omega")
+        print("No suma 1 omega (calc_probs)")
         omega_tau = (omega_tau.T / omega_tau.sum(axis=1)).T
 
     # Retornamos omega para calcular q y p_scrap_cond para calcular el exceso de demanda
@@ -255,6 +254,12 @@ def calc_probs(EV, precios_guess, tau):
 
 
 def get_q_tau(omega):
+    
+    if not np.allclose(omega.sum(axis=1), 1, atol=1e-10):
+        print("Omega no suma 1")
+    if not np.allclose(Q_a.sum(axis=1), 1, atol=1e-10):
+        print("Q_a no suma 1")
+
 
     # Matriz de transición completa
     T = omega @ Q_a
@@ -362,6 +367,7 @@ def sol_bellman_vectorized(precios_usados):
             break
     return EV
 
+
 def ED(p_guess):
     EV = sol_bellman_vectorized(p_guess)
     P = get_P(p_guess)
@@ -370,48 +376,26 @@ def ED(p_guess):
     total_supply = np.zeros(n_states)
     
     for tau in range(n_types):
-        mu = mus[tau]
-        EV_next = EV @ Q_a.T
+        omega_tau, p_scrap_cond, prob_keep = calc_probs(EV, p_guess, tau)
         
-        # 1. Probabilidades de salida (Scrap vs Sell)
-        u_v = mu * (P - t_s)
-        u_v[max_ages] = -1e10
-        u_s = mu * scrap_vec
-        # Prob condicional de scrap dado que decides salir
-        # P(scrap | disposal) = exp(u_s/sigma) / (exp(u_s/sigma) + exp(u_v/sigma))
-        p_scrap_cond = np.exp(u_s/sigma) / (np.exp(u_s/sigma) + np.exp(u_v/sigma))
-        p_scrap_cond[0] = 0
+        q_t = get_q_tau(omega_tau)
 
-        # 2. Matrices de decisión
-        v_keep = u_matrix[tau, :] + beta * EV_next[tau, :]
-        v_keep[max_ages] = -1e10
+        # 4. Cálculo de Demanda y Oferta
         
-        # v_disposal igual que en Bellman
-        v_disposal = sigma * logsumexp(np.vstack([mu*(P-t_s), mu*scrap_vec])/sigma, axis=0)
-        v_disposal[0] = 0
-        v_disposal[max_ages] = mu * scrap_vec[max_ages] # Forzado a scrap
+        # DEMANDA: Probabilidad de comprar un coche s1
+        # Como omega_tau = P(trade) + P(keep), extraemos solo la parte de "comprar"
+        prob_trade_only = omega_tau.copy()
+        idx_diag = np.arange(n_states)
+        prob_trade_only[idx_diag, idx_diag] -= prob_keep
         
-        v_trade = (u_matrix[tau, :][None, :] - mu*(P+t_b)[None, :] + 
-                   v_disposal[:, None] + beta*EV_next[tau, :][None, :])
-        v_trade[:, max_ages] = -1e10
-        v_trade[:, 0] = v_disposal + beta*EV_next[tau, 0]
-
-        # Probabilidades Logit puras (sin normalizar a mano, el denominador es exp(EV/sigma))
-        prob_keep = np.exp((v_keep - EV[tau, :]) / sigma)
-        prob_trade_mat = np.exp((v_trade - EV[tau, :][:, None]) / sigma)
+        # Demanda agregada del tipo tau: q @ P(trade)
+        demand_tau = q_t @ prob_trade_only
         
-        # 3. Distribución Estacionaria
-        omega = prob_trade_mat.copy()
-        np.fill_diagonal(omega, np.diag(omega) + prob_keep)
-        q_t = get_q_tau(omega)
-        
-        # 4. Oferta y Demanda
-        # Demanda de s1: sum_{s0} q(s0) * P(trade to s1 | s0)
-        demand_tau = q_t @ prob_trade_mat
-        
-        # Oferta de s0: q(s0) * P(no keep) * P(no scrap | no keep)
+        # OFERTA: Probabilidad de poner el coche s0 en el mercado
+        # Son los que deciden no mantener (1 - prob_keep) y deciden NO chatarrizar
         supply_tau = q_t * (1 - prob_keep) * (1 - p_scrap_cond)
         
+        # Sumamos al total ponderado por la masa de cada tipo
         total_demand += type_mass[tau] * demand_tau
         total_supply += type_mass[tau] * supply_tau
 
