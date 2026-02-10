@@ -155,9 +155,12 @@ for j in range(J):
 
 # Verificar si suman a 1 las filas (por construcción no debería haber problema),
 # me sirvió de debugging
-if not np.allclose(Q_a.sum(axis=1), 1):
-    print("Error: Hay filas en Q_a que no suman 1. Revisa los índices.")
-
+sumas_Qa = Q_a.sum(axis=1)
+if not np.allclose(sumas_Qa, 1):
+    print("¡PROBLEMA DETECTADO EN Q_a!")
+    print(f"Filas con error: {np.where(~np.isclose(sumas_Qa, 1))[0]}")
+    # Arreglo rápido para Q_a
+    Q_a = (Q_a.T / sumas_Qa).T
 
 
 # Paso 3: Bellman ----------------------------------------------------------------------
@@ -254,24 +257,23 @@ def calc_probs(EV, precios_guess, tau):
 
 
 def get_q_tau(omega):
+
     
     if not np.allclose(omega.sum(axis=1), 1, atol=1e-10):
         print("Omega no suma 1")
     if not np.allclose(Q_a.sum(axis=1), 1, atol=1e-10):
         print("Q_a no suma 1")
-
-
     # Matriz de transición completa
     T = omega @ Q_a
 
     n = T.shape[0]
-    if not np.allclose(T.sum(axis=1), 1):
+    if not np.allclose(T.sum(axis=1), 1, atol=1e-10):
         print("T no suma 1, checar")
 
     q = np.ones(n) / n
-
     for _ in range(5000):
         q_new = q @ T
+        q_new = q_new / np.sum(q_new)
         if np.max(np.abs(q_new - q)) < 1e-13:
             return q_new
         q = q_new
