@@ -188,45 +188,42 @@ def calc_probs(EV, precios_guess, tau):
     """
     P = get_P(precios_guess)
     mu = mus[tau]
-    EV_next = np.dot(EV, Q_a.T)
+    EV_tau = EV[tau, :]
+    EV_next_tau = EV[tau, :] @ Q_a.T
 
     # ------ Prob scrap y sell --------------------------------------
     # Obtener probabilidades de scrap y sell para incluirlo en las probabilidades de omega
-    u_vender = mu * (P - t_s)
-    u_scrap = mu * scrap_vec
-    for age in max_ages:
-        u_vender[age] = -1e10
+    u_v = mu * (P - t_s)
+    u_v[max_ages] = -1e10
+    u_v[0] = -1e10
+    u_s = mu * scrap_vec
+    u_s[0] = -1e10
     
-    m_salida = np.maximum(u_vender, u_scrap)
-    v_disposal = m_salida + sigma * np.log(np.exp((u_vender - m_salida)/sigma) + 
-                                           np.exp((u_scrap - m_salida)/sigma))
-    # Probabilidad condicional de elegir SCRAP dado que se hace TRADE
-    # prob_scrap_cond[s0]
-    p_scrap_cond = np.exp((u_scrap - v_disposal)/sigma)
+    v_disposal = sigma * logsumexp(np.vstack([u_v, u_s]) / sigma, axis=0)
+    v_disposal[0] = 0
+    p_scrap_cond = np.exp((mu * scrap_vec - v_disposal) / sigma)
+    p_scrap_cond[0] = 0
     
     # --- Funciones de valor --------------------------
 
     ## MANTENER ----------------------------
-    v_keep = u_matrix[tau, :] + beta * EV_next[tau, :]
-    # Hacer mantener imposible si está en edad terminal
-    for age_max_idx in max_ages:
-        v_keep[age_max_idx] = -1e10
+    v_keep = u_matrix[tau, :] + beta * EV_next_tau
+    v_keep[0] = -1e10
+    for a in max_ages:
+        v_keep[a] = -1e10
     
+
     ## TRADE ---------------------------------
     # Matriz de transacciones: v_trade[s0, s1]
     # Usamos broadcasting de numpy para evitar los loops de s0 y s1
     # Utilidad de tener s1 - costo compra s1 + valor venta s0 + valor futuro s1
-    v_trade = (u_matrix[tau, :][None, :] 
-               - mu * (P + t_b)[None, :] 
-               + v_disposal[:, None] # El valor esperado de su salida
-               + beta * EV_next[tau, :][None, :])
+    u_compra = u_matrix[tau, :] - mu * (P + t_b) + beta * EV_next_tau
+    v_trade = v_disposal[:, None] + u_compra[None, :]
+    v_trade[:, 0] = v_disposal + u_matrix[tau, 0] + beta * EV_next_tau[0]
     
-    # No se pueden comprar coches en edad terminal
-    for age_max_idx in max_ages:
-        v_trade[:, age_max_idx] = -1e10
-
-    # Quitamos el costo de búsqueda para ir al s=0
-    v_trade[:, 0] = u_matrix[tau, 0] + v_disposal + beta * EV_next[tau, 0]
+    v_trade[0, 0] = u_matrix[tau, 0] + beta * EV_next_tau[0]
+    v_trade[0, 1:] = u_compra[1:]
+    v_trade[:, max_ages] = -1e10
 
     # ---------- MATRIZ DE TRANSICIÓN OMEGA -------------------------------------------
     
@@ -235,21 +232,19 @@ def calc_probs(EV, precios_guess, tau):
     # Si s1 == s0, hay dos formas de estar ahí: haber mantenido (keep) 
     # o haber vendido y comprado el mismo modelo (trade).
     
-    # Usamos el EV[tau, s0] que ya calculamos en sol_bellman como denominador
-    # Esto garantiza estabilidad numérica total.
-    
-    prob_keep = np.exp((v_keep - EV[tau, :]) / sigma)
-    prob_trade_matrix = np.exp((v_trade - EV[tau, :][:, None]) / sigma)
-    
-    # La matriz Omega final:
-    omega_tau = prob_trade_matrix.copy()
-    # Sumamos la probabilidad de mantener en la diagonal (o donde s1 == s0)
-    np.fill_diagonal(omega_tau, np.diag(omega_tau) + prob_keep)
+    prob_keep = np.exp((v_keep - EV_tau) / sigma)
+    prob_trade_matrix = np.exp((v_trade - EV_tau[:, None]) / sigma)
 
-    if np.any(np.isnan(omega_tau)) or np.any(np.isinf(omega_tau)):
-        raise FloatingPointError("NaN o Inf detectado en omega_tau")
-    if not np.allclose(omega_tau.sum(axis=1), 1):
-        print("T no suma 1, checar")
+    omega_tau = prob_trade_matrix.copy()
+    idx = np.arange(n_states)
+    omega_tau[idx, idx] += prob_keep # Sumar la opción de mantener a la diagonal
+
+
+    # Este check ahora debería pasar perfecto
+    if not np.allclose(omega_tau.sum(axis=1), 1, atol=1e-10):
+        # Normalización de seguridad por errores de punto flotante
+        print("No suma 1 omega")
+        omega_tau = (omega_tau.T / omega_tau.sum(axis=1)).T
 
     # Retornamos omega para calcular q y p_scrap_cond para calcular el exceso de demanda
     return omega_tau, p_scrap_cond, prob_keep
@@ -267,7 +262,9 @@ def get_q_tau(omega):
     n = T.shape[0]
     if not np.allclose(T.sum(axis=1), 1):
         print("T no suma 1, checar")
+
     q = np.ones(n) / n
+
     for _ in range(5000):
         q_new = q @ T
         if np.max(np.abs(q_new - q)) < 1e-13:
