@@ -248,6 +248,8 @@ def calc_probs(EV, precios_guess, tau):
 
     if np.any(np.isnan(omega_tau)) or np.any(np.isinf(omega_tau)):
         raise FloatingPointError("NaN o Inf detectado en omega_tau")
+    if not np.allclose(omega_tau.sum(axis=1), 1):
+        print("T no suma 1, checar")
 
     # Retornamos omega para calcular q y p_scrap_cond para calcular el exceso de demanda
     return omega_tau, p_scrap_cond, prob_keep
@@ -263,6 +265,8 @@ def get_q_tau(omega):
     T = omega @ Q_a
 
     n = T.shape[0]
+    if not np.allclose(T.sum(axis=1), 1):
+        print("T no suma 1, checar")
     q = np.ones(n) / n
     for _ in range(5000):
         q_new = q @ T
@@ -336,22 +340,25 @@ def sol_bellman_vectorized(precios_usados):
             # Opción MANTENER: v_keep[s0]
             v_keep = u_matrix[tau, :] + beta * EV_next[tau, :]
             v_keep[max_ages] = -1e10 # Forzado a chatarrizar
+            v_keep[0] = -1e10 # Definimos mantener 0 a través de trade pa evitar pedos
             
             # Opción TRADE: v_trade[s0, s1] 
             # (Utilidad de s1 - costo s1 + v_disposal de s0 + valor futuro s1)
             # Usamos broadcasting: (n_states, 1) + (1, n_states)
-            v_trade = (u_matrix[tau, :][None, :] 
-                       - mu * (P + t_b)[None, :] 
-                       + v_disposal[:, None] 
-                       + beta * EV_next[tau, :][None, :])
+            u_compra = u_matrix[tau, :] - mu * (P + t_b) + beta * EV_next[tau, :]
+            v_trade = v_disposal[:, None] + u_compra[None, :]
             
-            v_trade[:, max_ages] = -1e10 # No se compran terminales
-            # Opción especial: Volver a s=0 (No comprar nada tras vender)
-            v_trade[:, 0] = 0 + v_disposal + beta * EV_next[tau, 0]
+            # s1 = 0 (incluye u_matrix[tau, 0])
+            v_trade[:, 0] = v_disposal + u_matrix[tau, 0] + beta * EV_next[tau, 0]
+            
+            # Si el agente empieza en 0, no tiene v_disposal
+            v_trade[0, 0] = u_matrix[tau, 0] + beta * EV_next[tau, 0]
+            v_trade[0, 1:] = u_compra[1:] # Comprar coche desde s=0
 
-            # Bellman Update: LogSumExp sobre todas las opciones
-            # Para cada s0, el agente elige entre {mantener, trade_s1, trade_s2...}
-            choices = np.hstack([v_keep[:, None], v_trade]) # (n_states, 1 + n_states)
+            v_trade[:, max_ages] = -1e10
+
+            # --- 4. Update ---
+            choices = np.hstack([v_keep[:, None], v_trade])
             EV[tau, :] = sigma * logsumexp(choices / sigma, axis=1)
 
         if np.max(np.abs(EV - EV_old)) < 1e-8:
