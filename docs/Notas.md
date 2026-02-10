@@ -5,6 +5,7 @@
 - Conectar satisfactoriamente config.py con simulacion.py
 - Iniciar estimacion.py
 - Documentar mejor (tal vez al finalizar cosillas)
+- Mejorar con librerias qué hacen los mismos procesos que escribo desde cero como 'quantecon'
 
 
 ## Pendientes generales o futuro del proyecto
