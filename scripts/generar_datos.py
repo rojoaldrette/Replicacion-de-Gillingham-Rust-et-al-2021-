@@ -47,14 +47,13 @@ def gen_datos(precios_usados, N, T, rand_p = True):
     # ---- Inicializar hogares -------
     tipos = np.random.choice([0, 1], size=N, p=sim.type_mass)
     estados = np.array([np.random.choice(sim.n_states, p=q_ss[t]) for t in tipos])
-
+    
+    rows_ownership = []
+    rows_transactions = []
     for t in range(T):
         for i in range(N):
             s0 = estados[i]
             tau = tipos[i]
-
-            rows_ownership = []
-            rows_transactions = []
 
             s1 = np.random.choice(sim.n_states, p=omegas[tau][s0])
 
@@ -87,10 +86,6 @@ def gen_datos(precios_usados, N, T, rand_p = True):
 
 
 if __name__ == "__main__":
-    #df_owner, df_trans = gen_datos(precios, 1000, 7)
-    q_final, q_ss, p_trade, omegas = sim.get_info(precios)
+    df_owner, df_trans = gen_datos(precios, 1000, 7)
 
-q_test = sim.get_q_tau(omegas[0])
 
-if not np.allclose(omegas[0].sum(axis=1), 1):
-    print("nel we")

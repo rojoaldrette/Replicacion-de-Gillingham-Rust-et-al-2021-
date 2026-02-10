@@ -19,7 +19,6 @@
 
 # PREAMBULO ___________________________________________________________________
 
-import pandas as pd
 import numpy as np
 import time
 from datetime import timedelta
@@ -372,7 +371,6 @@ def sol_bellman_vectorized(precios_usados):
 
 def ED(p_guess):
     EV = sol_bellman_vectorized(p_guess)
-    P = get_P(p_guess)
     
     total_demand = np.zeros(n_states)
     total_supply = np.zeros(n_states)
@@ -430,13 +428,13 @@ def ED_wrapper(p_vec):
 
 # -------------------------------------------------
 
-print("Iniciando la búsqueda del equilibrio de mercado...")
-
 
 
 # Scipy shit ---------------------------------------
 
 def obtener_p_optimo():
+
+    print("Iniciando la búsqueda del equilibrio de mercado...")
 
     start_time = time.perf_counter()
 
