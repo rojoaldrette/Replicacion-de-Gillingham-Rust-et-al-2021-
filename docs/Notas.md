@@ -1,5 +1,12 @@
 ﻿# Simulacion_Gillingham: Notas internas del Proyecto
 
+## Pendientes inmediatos
+
+- Conectar satisfactoriamente config.py con simulacion.py
+- Iniciar estimacion.py
+- Documentar mejor (tal vez al finalizar cosillas)
+
+
 ## Pendientes generales o futuro del proyecto
 
 La simulación parece converger de 3 a 12 minutos, dependiendo el nivel de desequilibrio en el que empieza el mercado. La guess inicial parece disiminuir con éxito el tiempo de convergencia.

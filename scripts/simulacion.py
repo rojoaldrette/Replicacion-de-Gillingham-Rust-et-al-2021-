@@ -462,7 +462,7 @@ def obtener_p_optimo():
     msg = f"Execution took: {timedelta(seconds=round(elapsed_time_secs))} (Wall clock time)"
     print(msg)
 
-    np.save("precios_optimizados.npy", precios_equilibrio_usados)
+    np.save("scripts/precios_optimizados.npy", precios_equilibrio_usados)
     
     return precios_equilibrio_usados
 
