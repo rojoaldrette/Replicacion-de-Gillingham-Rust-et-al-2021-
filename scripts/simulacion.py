@@ -51,7 +51,7 @@ sigma = 3
 
 
 # Hay 3 coches con distintas calidades y precios
-calidad_x = np.array([35, 40, 46]) * 0.75
+calidad_x = np.array([32, 40, 46]) * 0.6
 # Scalar de utilidad de opción de afuera
 oo_scalar = 2
 precios_nuevos = np.array([80, 180, 400])
@@ -59,11 +59,11 @@ scrap_values = np.array([1, 1, 1])
 costo_mant = np.array([4, 4, 4]) # Aún no tiene esta implementación
 
 # Los costos de transacción
-t_b = 15
-t_s = 15
+t_b = 13
+t_s = 13
 
 # Depreciación por edad
-delta = 3
+delta = 2
 
 
 # Paso 2. Infraestructura y utilidad ---------------------------------------------------------
