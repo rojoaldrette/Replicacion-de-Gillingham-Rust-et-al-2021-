@@ -6,6 +6,7 @@
 - Iniciar estimacion.py
 - Documentar mejor (tal vez al finalizar cosillas)
 - Mejorar con librerias qué hacen los mismos procesos que escribo desde cero como 'quantecon'
+- Limpiar simulacion.py (crear_vtrade función) y posiblemente separarlo en varios .py para que también ayude con la estimación (encontrar puntos fijos y así).
 
 
 ## Pendientes generales o futuro del proyecto

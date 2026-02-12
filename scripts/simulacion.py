@@ -27,7 +27,7 @@ from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
 
 # Cargar los parámetros para la simulación
-import config
+#import config
 
 # CODIGO ______________________________________________________________________
 
@@ -44,21 +44,23 @@ n_types = 2
 # Proporción agentes
 type_mass = [0.5, 0.5]
 # Sus mu's (efectos riqueza)
-mus = np.array([0.5, 0.2])
+mus = np.array([0.3, 0.1])
 # Correlación entre elecciones
-sigma = 7
+sigma = 3
 
 
 
 # Hay 3 coches con distintas calidades y precios
-calidad_x = np.array([60, 75, 85]) 
+calidad_x = np.array([35, 40, 46]) * 0.75
+# Scalar de utilidad de opción de afuera
+oo_scalar = 2
 precios_nuevos = np.array([80, 180, 400])
 scrap_values = np.array([1, 1, 1])
-costo_mant = np.array([10, 10, 10]) # Aún no tiene esta implementación
+costo_mant = np.array([4, 4, 4]) # Aún no tiene esta implementación
 
 # Los costos de transacción
-t_b = 10
-t_s = 5
+t_b = 15
+t_s = 15
 
 # Depreciación por edad
 delta = 3
@@ -110,7 +112,7 @@ for tau in range(n_types):
         for a in range(1, A_max + 1):
             idx = get_idx(j, a)
             # Calculamos la utilidad a partir de lo que da de calidad menos la depreciación
-            u_matrix[tau, idx] = calidad_x[j] - delta * a
+            u_matrix[tau, idx] = calidad_x[j] - delta * a - oo_scalar
 
 
 
@@ -462,7 +464,7 @@ def obtener_p_optimo():
     msg = f"Execution took: {timedelta(seconds=round(elapsed_time_secs))} (Wall clock time)"
     print(msg)
 
-    np.save("scripts/precios_optimizados.npy", precios_equilibrio_usados)
+    np.save("input/precios_optimizados.npy", precios_equilibrio_usados)
     
     return precios_equilibrio_usados
 
@@ -497,7 +499,7 @@ def graficar_distribucion(p_final):
     _, dist_tipos, a, b = get_info(p_final) # Asumiendo que get_info devuelve (q_agg, [q_tau])
 
     fig, axes = plt.subplots(1, J, figsize=(15, 5), sharey=True)
-    nombres_tipos = ['Pobre (mu=0.3)', 'Rico (mu=0.1)']
+    nombres_tipos = [f'Pobre (mu={mus[0]})', f'Rico (mu={mus[1]})']
     colores = ['#e74c3c', '#3498db']
 
     for j in range(J):
@@ -533,7 +535,4 @@ if __name__ == "__main__":
     precios_equilibrio_usados = obtener_p_optimo()
     q_final, q_ss, omega_trade, omega_f = get_info(precios_equilibrio_usados)
     graficar_distribucion(precios_equilibrio_usados)
-
-
-
 
