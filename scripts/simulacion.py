@@ -46,12 +46,12 @@ type_mass = [0.5, 0.5]
 # Sus mu's (efectos riqueza)
 mus = np.array([0.3, 0.1])
 # Correlación entre elecciones
-sigma = 3
+sigma = 2
 
 
 
 # Hay 3 coches con distintas calidades y precios
-calidad_x = np.array([32, 40, 46]) * 0.6
+calidad_x = np.array([30, 40, 47]) * 0.35
 # Scalar de utilidad de opción de afuera
 oo_scalar = 2
 precios_nuevos = np.array([80, 180, 400])
@@ -63,7 +63,8 @@ t_b = 13
 t_s = 13
 
 # Depreciación por edad
-delta = 2
+delta = 0.5
+
 
 
 # Paso 2. Infraestructura y utilidad ---------------------------------------------------------
@@ -112,7 +113,7 @@ for tau in range(n_types):
         for a in range(1, A_max + 1):
             idx = get_idx(j, a)
             # Calculamos la utilidad a partir de lo que da de calidad menos la depreciación
-            u_matrix[tau, idx] = calidad_x[j] - delta * a - oo_scalar
+            u_matrix[tau, idx] = calidad_x[j] - delta * a - mus[tau] * costo_mant[j]
 
 
 
