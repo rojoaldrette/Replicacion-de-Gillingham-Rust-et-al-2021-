@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt
 # Factor de descuento
 beta = 0.95
 # Edad máxima
-A_max = 15
+A_max = 20
 # Marcas
 J = 3
 # Tipos de agentes (rico y pobre), 1 = pobre, 2 = rico
@@ -51,19 +51,19 @@ sigma = 2
 
 
 # Hay 3 coches con distintas calidades y precios
-calidad_x = np.array([30, 40, 47]) * 0.35
+calidad_x = np.array([30, 40, 47]) * 0.33
 # Scalar de utilidad de opción de afuera
 oo_scalar = 2
 precios_nuevos = np.array([80, 180, 400])
 scrap_values = np.array([1, 1, 1])
-costo_mant = np.array([4, 4, 4]) # Aún no tiene esta implementación
+costo_mant = np.array([4, 4, 4]) * 1.7 # Aún no tiene esta implementación
 
 # Los costos de transacción
 t_b = 13
-t_s = 13
+t_s = 10
 
 # Depreciación por edad
-delta = 0.5
+delta = 0.4
 
 
 
@@ -167,7 +167,29 @@ if not np.allclose(sumas_Qa, 1):
 
 # Paso 3: Bellman ----------------------------------------------------------------------
 
-# Función para crear vector de precios para cada estado
+
+def get_indices_usados():
+    """
+    Identifica los índices de los estados que corresponden a coches usados.
+    Estos son los mercados cuyos precios el optimizador debe ajustar.
+    """
+    indices_usados = []
+    
+    for s in range(n_states):
+        # 1. Ignoramos el estado s=0 (no hay bien que vender)
+        if s == 0:
+            continue
+            
+        # 2. Obtenemos la edad del coche en este estado
+        age = get_age(s)
+        
+        # 3. Filtramos:
+        # - Debe ser mayor a 0 (no es nuevo)
+        # - No debe estar en la lista de edades terminales (no se vende a particulares)
+        if age > 1 and s not in max_ages:
+            indices_usados.append(s)
+            
+    return np.array(indices_usados)
 
 def get_P(precios_usados):
     P = np.zeros(n_states)
@@ -293,28 +315,7 @@ def get_big_q(q_list):
 # Paso 6: Oferta y demanda ---------------------------------------------------------
 
 
-def get_indices_usados():
-    """
-    Identifica los índices de los estados que corresponden a coches usados.
-    Estos son los mercados cuyos precios el optimizador debe ajustar.
-    """
-    indices_usados = []
-    
-    for s in range(n_states):
-        # 1. Ignoramos el estado s=0 (no hay bien que vender)
-        if s == 0:
-            continue
-            
-        # 2. Obtenemos la edad del coche en este estado
-        age = get_age(s)
-        
-        # 3. Filtramos:
-        # - Debe ser mayor a 0 (no es nuevo)
-        # - No debe estar en la lista de edades terminales (no se vende a particulares)
-        if age > 1 and s not in max_ages:
-            indices_usados.append(s)
-            
-    return np.array(indices_usados)
+
 
 
 def sol_bellman_vectorized(precios_usados):
@@ -480,17 +481,17 @@ def get_info(p_final):
     EV = sol_bellman_vectorized(p_final)
     dist_tipos = []
     omega = []
-    p_trade_1 = []
+    p_scrap_1 = []
     
     for tau in range(n_types):
-        omega_t, p_trade, p_keep_t = calc_probs(EV, p_final, tau) # Usa tu calc_probs corregida
+        omega_t, p_scrap, p_keep_t = calc_probs(EV, p_final, tau) # Usa tu calc_probs corregida
         q_t = get_q_tau(omega_t)
         dist_tipos.append(q_t)
         omega.append(omega_t)
-        p_trade_1.append(p_trade)
+        p_scrap_1.append(p_scrap)
     
     q_final = get_big_q(dist_tipos)
-    return q_final, dist_tipos, p_trade_1, omega
+    return q_final, dist_tipos, p_scrap_1, omega
     
 
 # Graficas
@@ -499,7 +500,7 @@ def graficar_distribucion(p_final):
     EV = sol_bellman_vectorized(p_final)
     _, dist_tipos, a, b = get_info(p_final) # Asumiendo que get_info devuelve (q_agg, [q_tau])
 
-    fig, axes = plt.subplots(1, J, figsize=(15, 5), sharey=True)
+    fig, axes = plt.subplots(1, J, figsize=(A_max, 5), sharey=True)
     nombres_tipos = [f'Pobre (mu={mus[0]})', f'Rico (mu={mus[1]})']
     colores = ['#e74c3c', '#3498db']
 

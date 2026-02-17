@@ -42,7 +42,7 @@ precios = cargar_precios()
 def gen_datos(precios_usados, N, T, rand_p = True):
 
     P = sim.get_P(precios_usados)
-    q_final, q_ss, p_trade, omegas = sim.get_info(precios_usados)
+    q_final, q_ss, p_scrap, omegas = sim.get_info(precios_usados)
 
     # ---- Inicializar hogares -------
     tipos = np.random.choice([0, 1], size=N, p=sim.type_mass)
@@ -59,7 +59,8 @@ def gen_datos(precios_usados, N, T, rand_p = True):
             brand_0 = sim.get_brand(s0)
 
             s1 = np.random.choice(sim.n_states, p=omegas[tau][s0])
-
+            dummy_scrap = np.random.binomial(1, p_scrap[tau][s0])
+            
             age_1 = sim.get_age(s1)
 
             if s1 != s0 and s1 != 0:
@@ -75,17 +76,19 @@ def gen_datos(precios_usados, N, T, rand_p = True):
                     'year': t, 'tau': tau, 'hh_id': i, 'car_id': brand_1,
                     'age': age_1, 'price': p_obs,
                 })
-                rows_owner_trans.append({
-                    'year': t, 'tau': tau, 'hh_id': i, 'car_id_s': brand_0,
-                    'age_s': age_0, 'car_id_d': brand_1,
-                    'age_d': age_1, 'price': p_obs,
-                })
+                
 
             s2 = np.random.choice(sim.n_states, p=sim.Q_a[s1])
             estados[i] = s2
             age_2 = sim.get_age(s2)
             brand_2 = sim.get_brand(s2)
             
+            rows_owner_trans.append({
+                    'year': t, 'tau': tau, 'hh_id': i, 'car_id_s': brand_0,
+                    'age_s': age_0, 'car_id_t': brand_1,
+                    'age_t': age_1,'car_id_d': brand_2,
+                    'age_d': age_2, 'scrap': dummy_scrap
+                })
 
             rows_ownership.append({
                 'year': t, 'tau': tau, 'hh_id': i, 'type': tau,
@@ -96,10 +99,18 @@ def gen_datos(precios_usados, N, T, rand_p = True):
 
 
 if __name__ == "__main__":
-    df_owner, df_trans, df_owner_trans = gen_datos(precios, 10000, 7)
+    df_owner, df_trans, df_owner_trans = gen_datos(precios, 50000, 10)
     df_owner.to_csv('output/df_owner.csv')
     df_trans.to_csv('output/df_trans.csv')
     df_owner_trans.to_csv('output/df_owner_trans.csv')
 
 
-    df_owner[(df_owner["hh_id"] == 5)]
+
+df_sums = (
+    df_owner_trans
+    .groupby(['car_id_s','age_s'])
+    .agg(n_scrap = ('scrap', 'sum'))
+    .reset_index()
+)
+
+df_owner_trans[df_owner_trans["hh_id"] == 5]
