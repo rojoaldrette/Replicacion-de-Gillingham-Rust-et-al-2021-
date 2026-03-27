@@ -482,6 +482,7 @@ def get_info(p_final):
     dist_tipos = []
     omega = []
     p_scrap_1 = []
+    p_keep_1 = []
     
     for tau in range(n_types):
         omega_t, p_scrap, p_keep_t = calc_probs(EV, p_final, tau) # Usa tu calc_probs corregida
@@ -489,16 +490,17 @@ def get_info(p_final):
         dist_tipos.append(q_t)
         omega.append(omega_t)
         p_scrap_1.append(p_scrap)
+        p_keep_1.append(p_keep_t)
     
     q_final = get_big_q(dist_tipos)
-    return q_final, dist_tipos, p_scrap_1, omega
+    return q_final, dist_tipos, p_scrap_1, p_keep_1, omega
     
 
 # Graficas
 def graficar_distribucion(p_final):
     # 1. Obtenemos EV y las q estacionarias
     EV = sol_bellman_vectorized(p_final)
-    _, dist_tipos, a, b = get_info(p_final) # Asumiendo que get_info devuelve (q_agg, [q_tau])
+    _, dist_tipos, a, b, c = get_info(p_final) # Asumiendo que get_info devuelve (q_agg, [q_tau])
 
     fig, axes = plt.subplots(1, J, figsize=(A_max, 5), sharey=True)
     nombres_tipos = [f'Pobre (mu={mus[0]})', f'Rico (mu={mus[1]})']
@@ -535,6 +537,6 @@ def graficar_distribucion(p_final):
 
 if __name__ == "__main__":
     precios_equilibrio_usados = obtener_p_optimo()
-    q_final, q_ss, omega_trade, omega_f = get_info(precios_equilibrio_usados)
+    q_final, q_ss, omega_scrap, omega_trade, omega_f = get_info(precios_equilibrio_usados)
     graficar_distribucion(precios_equilibrio_usados)
 

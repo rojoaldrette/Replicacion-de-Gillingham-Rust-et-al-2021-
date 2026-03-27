@@ -15,13 +15,21 @@
 #
 # _____________________________________________________________________________
 
+# TAREAS
+# Parece ser que hay que generar la pr_scrap por separado como sale
+# en el apéndice (Pr(j,d,s=1|a,i,...)) y luego hacer el match con la de
+# transiciones y generar la base de datos de la log likelihood
+
+
 
 # PREAMBULO ___________________________________________________________________
 
 
 import numpy as np
 import pandas as pd
+import importlib
 import simulacion as sim
+importlib.reload(sim)
 
 
 
@@ -42,7 +50,7 @@ precios = cargar_precios()
 def gen_datos(precios_usados, N, T, rand_p = True):
 
     P = sim.get_P(precios_usados)
-    q_final, q_ss, p_scrap, omegas = sim.get_info(precios_usados)
+    q_final, q_ss, p_scrap, p_keep, omegas = sim.get_info(precios_usados)
 
     # ---- Inicializar hogares -------
     tipos = np.random.choice([0, 1], size=N, p=sim.type_mass)
@@ -55,13 +63,24 @@ def gen_datos(precios_usados, N, T, rand_p = True):
         for i in range(N):
             s0 = estados[i]
             tau = tipos[i]
-            age_0 = sim.get_age(s0)
+            age = sim.get_age(s0)
+            if age == sim.A_max:
+                age_0 = "Final"
+            else:
+                age_0 = age
+
             brand_0 = sim.get_brand(s0)
 
             s1 = np.random.choice(sim.n_states, p=omegas[tau][s0])
             dummy_scrap = np.random.binomial(1, p_scrap[tau][s0])
+            if dummy_scrap == 1:
+                dummy_keep = 0
+            else:
+                dummy_keep = np.random.binomial(1, p=p_keep[tau][s0])
+
             
             age_1 = sim.get_age(s1)
+            brand_1 = sim.get_brand(s1)
 
             if s1 != s0 and s1 != 0:
                 # Precio observado = Precio equilibrio * error de calidad
@@ -71,7 +90,6 @@ def gen_datos(precios_usados, N, T, rand_p = True):
                 else:
                     p_obs = p_base
                 
-                brand_1 = sim.get_brand(s1)
                 rows_transactions.append({
                     'year': t, 'tau': tau, 'hh_id': i, 'car_id': brand_1,
                     'age': age_1, 'price': p_obs,
@@ -87,7 +105,7 @@ def gen_datos(precios_usados, N, T, rand_p = True):
                     'year': t, 'tau': tau, 'hh_id': i, 'car_id_s': brand_0,
                     'age_s': age_0, 'car_id_t': brand_1,
                     'age_t': age_1,'car_id_d': brand_2,
-                    'age_d': age_2, 'scrap': dummy_scrap
+                    'age_d': age_2, 'scrap': dummy_scrap, 'keep': dummy_keep
                 })
 
             rows_ownership.append({
@@ -100,9 +118,15 @@ def gen_datos(precios_usados, N, T, rand_p = True):
 
 if __name__ == "__main__":
     df_owner, df_trans, df_owner_trans = gen_datos(precios, 50000, 10)
+
+    df_owner_trans = (
+        df_owner_trans
+    )
+
     df_owner.to_csv('output/df_owner.csv')
     df_trans.to_csv('output/df_trans.csv')
     df_owner_trans.to_csv('output/df_owner_trans.csv')
+
 
 
 
